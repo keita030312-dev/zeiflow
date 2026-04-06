@@ -89,6 +89,10 @@ function LogoutButton() {
   }
   return (
     <div className="px-3 py-4 border-t border-[rgba(212,175,55,0.1)]">
+      <div className="flex gap-3 px-3 mb-2">
+        <a href="/terms" className="text-[10px] text-[#475569] hover:text-[#D4AF37] transition-colors">利用規約</a>
+        <a href="/privacy" className="text-[10px] text-[#475569] hover:text-[#D4AF37] transition-colors">プライバシーポリシー</a>
+      </div>
       <button
         onClick={handleLogout}
         className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-[#94A3B8] hover:text-red-400 transition-colors w-full"
