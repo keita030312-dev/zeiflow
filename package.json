@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev --hostname 0.0.0.0",
-    "build": "npx prisma generate --schema=prisma/schema.prisma && next build",
+    "build": "node -e \"require('fs').renameSync('prisma.config.ts','prisma.config.ts.bak')\" && npx prisma generate && node -e \"require('fs').renameSync('prisma.config.ts.bak','prisma.config.ts')\" && next build",
     "db:push": "prisma db push",
     "start": "next start --hostname 0.0.0.0",
     "lint": "eslint"
