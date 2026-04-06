@@ -11,6 +11,9 @@ import {
   X,
   FileText,
   Eye,
+  Edit3,
+  Trash2,
+  Save,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -23,6 +26,15 @@ import {
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
+
+const ACCOUNTS = [
+  "現金", "当座預金", "普通預金", "売掛金", "商品", "前払費用", "建物", "車両運搬具", "備品",
+  "買掛金", "未払金", "未払費用", "預り金", "借入金",
+  "売上高", "受取利息", "雑収入",
+  "仕入高", "給料手当", "法定福利費", "旅費交通費", "通信費", "消耗品費", "水道光熱費",
+  "地代家賃", "保険料", "修繕費", "広告宣伝費", "接待交際費", "会議費", "租税公課",
+  "減価償却費", "支払手数料", "雑費", "新聞図書費", "外注費", "福利厚生費", "荷造運賃", "車両費",
+];
 
 interface Client {
   id: string;
@@ -45,15 +57,31 @@ interface ReceiptResult {
     description: string;
     confidence: number;
   };
+  journalEntry?: {
+    id: string;
+  };
 }
 
 interface ReceiptRecord {
   id: string;
   imagePath: string;
+  imageMime: string | null;
   status: string;
   ocrRaw: string | null;
   uploadedAt: string;
   client: { name: string; code: string };
+  journalEntries: {
+    id: string;
+    date: string;
+    debitAccount: string;
+    creditAccount: string;
+    amount: number;
+    taxAmount?: number;
+    description: string;
+    invoiceNumber?: string;
+    memo?: string;
+    isConfirmed: boolean;
+  }[];
 }
 
 export default function ReceiptsPage() {
@@ -78,6 +106,30 @@ export default function ReceiptsPage() {
 
   // Lightbox state
   const [lightboxImage, setLightboxImage] = useState<string | null>(null);
+
+  // Editing state
+  const [editingReceiptId, setEditingReceiptId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState({
+    date: "",
+    debitAccount: "",
+    creditAccount: "",
+    amount: 0,
+    description: "",
+    invoiceNumber: "",
+    memo: "",
+  });
+
+  // Result editing state
+  const [editingResult, setEditingResult] = useState(false);
+  const [resultEditForm, setResultEditForm] = useState({
+    date: "",
+    debitAccount: "",
+    creditAccount: "",
+    amount: 0,
+    description: "",
+    invoiceNumber: "",
+    memo: "",
+  });
 
   const fetchReceipts = useCallback(async () => {
     setLoadingReceipts(true);
@@ -270,6 +322,107 @@ export default function ReceiptsPage() {
       return parsed.storeName || "-";
     } catch {
       return "-";
+    }
+  }
+
+  function startEditReceipt(receipt: ReceiptRecord) {
+    const je = receipt.journalEntries[0];
+    if (!je) return;
+    setEditingReceiptId(receipt.id);
+    setEditForm({
+      date: je.date,
+      debitAccount: je.debitAccount,
+      creditAccount: je.creditAccount,
+      amount: je.amount,
+      description: je.description,
+      invoiceNumber: je.invoiceNumber || "",
+      memo: je.memo || "",
+    });
+  }
+
+  async function saveReceiptEdit(journalId: string) {
+    try {
+      const res = await fetch("/api/journals", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: journalId,
+          date: editForm.date,
+          debitAccount: editForm.debitAccount,
+          creditAccount: editForm.creditAccount,
+          amount: editForm.amount,
+          description: editForm.description,
+          memo: editForm.memo || undefined,
+          invoiceNumber: editForm.invoiceNumber || undefined,
+        }),
+      });
+      if (res.ok) {
+        setEditingReceiptId(null);
+        toast.success("仕訳を更新しました");
+        fetchReceipts();
+      } else {
+        toast.error("更新に失敗しました");
+      }
+    } catch {
+      toast.error("通信エラーが発生しました");
+    }
+  }
+
+  async function deleteJournalEntry(journalId: string) {
+    if (!confirm("この仕訳を削除しますか？")) return;
+    try {
+      const res = await fetch(`/api/journals?id=${journalId}`, { method: "DELETE" });
+      if (res.ok) {
+        toast.success("仕訳を削除しました");
+        fetchReceipts();
+      } else {
+        toast.error("削除に失敗しました");
+      }
+    } catch {
+      toast.error("通信エラーが発生しました");
+    }
+  }
+
+  function startEditResult() {
+    if (!result) return;
+    setEditingResult(true);
+    setResultEditForm({
+      date: result.ocr.date,
+      debitAccount: result.classification.debitAccount,
+      creditAccount: result.classification.creditAccount,
+      amount: result.classification.amount,
+      description: result.classification.description,
+      invoiceNumber: result.ocr.invoiceNumber || "",
+      memo: "",
+    });
+  }
+
+  async function saveResultEdit() {
+    if (!result?.journalEntry?.id) return;
+    try {
+      const res = await fetch("/api/journals", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: result.journalEntry.id,
+          date: resultEditForm.date,
+          debitAccount: resultEditForm.debitAccount,
+          creditAccount: resultEditForm.creditAccount,
+          amount: resultEditForm.amount,
+          description: resultEditForm.description,
+          memo: resultEditForm.memo || undefined,
+          invoiceNumber: resultEditForm.invoiceNumber || undefined,
+        }),
+      });
+      if (res.ok) {
+        setEditingResult(false);
+        toast.success("仕訳を更新しました");
+        fetchReceipts();
+      } else {
+        toast.error("更新に失敗しました");
+      }
+    } catch {
+      toast.error("通信エラーが発生しました");
     }
   }
 
@@ -533,6 +686,75 @@ export default function ReceiptsPage() {
                       </div>
                     </div>
 
+                    {/* Edit Result Button */}
+                    {result.journalEntry?.id && !editingResult && (
+                      <Button
+                        onClick={startEditResult}
+                        variant="secondary"
+                        className="w-full bg-[#334155] text-[#F1F5F9] hover:bg-[#475569]"
+                      >
+                        <Edit3 className="h-4 w-4 mr-2" />
+                        仕訳を編集
+                      </Button>
+                    )}
+
+                    {/* Inline Edit Form for Result */}
+                    {editingResult && result.journalEntry?.id && (
+                      <div className="rounded-lg border border-[rgba(212,175,55,0.15)] p-4 space-y-3">
+                        <h3 className="text-sm font-medium text-[#D4AF37]">仕訳を編集</h3>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div className="space-y-1">
+                            <label className="text-xs text-[#94A3B8]">日付</label>
+                            <input type="date" value={resultEditForm.date} onChange={(e) => setResultEditForm({ ...resultEditForm, date: e.target.value })}
+                              className="w-full rounded-md bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.12)] text-[#F1F5F9] text-sm px-3 py-2" />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-xs text-[#94A3B8]">金額</label>
+                            <input type="number" value={resultEditForm.amount} onChange={(e) => setResultEditForm({ ...resultEditForm, amount: Number(e.target.value) })}
+                              className="w-full rounded-md bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.12)] text-[#F1F5F9] text-sm px-3 py-2" />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-xs text-[#94A3B8]">借方</label>
+                            <select value={resultEditForm.debitAccount} onChange={(e) => setResultEditForm({ ...resultEditForm, debitAccount: e.target.value })}
+                              className="w-full rounded-md bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.12)] text-[#F1F5F9] text-sm px-3 py-2">
+                              {ACCOUNTS.map((a) => <option key={a} value={a}>{a}</option>)}
+                            </select>
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-xs text-[#94A3B8]">貸方</label>
+                            <select value={resultEditForm.creditAccount} onChange={(e) => setResultEditForm({ ...resultEditForm, creditAccount: e.target.value })}
+                              className="w-full rounded-md bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.12)] text-[#F1F5F9] text-sm px-3 py-2">
+                              {ACCOUNTS.map((a) => <option key={a} value={a}>{a}</option>)}
+                            </select>
+                          </div>
+                          <div className="space-y-1 sm:col-span-2">
+                            <label className="text-xs text-[#94A3B8]">摘要</label>
+                            <input type="text" value={resultEditForm.description} onChange={(e) => setResultEditForm({ ...resultEditForm, description: e.target.value })}
+                              className="w-full rounded-md bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.12)] text-[#F1F5F9] text-sm px-3 py-2" />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-xs text-[#94A3B8]">登録番号</label>
+                            <input type="text" value={resultEditForm.invoiceNumber} onChange={(e) => setResultEditForm({ ...resultEditForm, invoiceNumber: e.target.value })}
+                              className="w-full rounded-md bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.12)] text-[#F1F5F9] text-sm px-3 py-2" />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-xs text-[#94A3B8]">メモ</label>
+                            <input type="text" value={resultEditForm.memo} onChange={(e) => setResultEditForm({ ...resultEditForm, memo: e.target.value })}
+                              className="w-full rounded-md bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.12)] text-[#F1F5F9] text-sm px-3 py-2" />
+                          </div>
+                        </div>
+                        <div className="flex gap-2">
+                          <Button onClick={saveResultEdit} className="flex-1 bg-gradient-to-r from-[#D4AF37] to-[#B8962E] text-[#0F172A] font-semibold">
+                            <Save className="h-4 w-4 mr-2" />
+                            保存
+                          </Button>
+                          <Button onClick={() => setEditingResult(false)} variant="secondary" className="bg-[#334155] text-[#F1F5F9] hover:bg-[#475569]">
+                            キャンセル
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+
                     {/* Items */}
                     {result.ocr.items.length > 0 && (
                       <div className="space-y-2">
@@ -606,10 +828,10 @@ export default function ReceiptsPage() {
                     {/* Thumbnail */}
                     <div
                       className="relative h-32 bg-[rgba(15,23,42,0.5)] cursor-pointer group"
-                      onClick={() => setLightboxImage(`/api/${receipt.imagePath}`)}
+                      onClick={() => setLightboxImage(`/api/uploads/img?id=${receipt.id}`)}
                     >
                       <img
-                        src={`/api/${receipt.imagePath}`}
+                        src={`/api/uploads/img?id=${receipt.id}`}
                         alt="Receipt"
                         className="w-full h-full object-cover"
                       />
@@ -631,7 +853,99 @@ export default function ReceiptsPage() {
                       <p className="text-xs text-[#64748B] truncate">
                         {receipt.client.name}
                       </p>
+
+                      {/* Journal Entry Summary */}
+                      {receipt.journalEntries?.[0] && (
+                        <div className="pt-1.5 border-t border-[rgba(212,175,55,0.08)]">
+                          <p className="text-xs text-[#D4AF37] font-[var(--font-inter)] truncate">
+                            {receipt.journalEntries[0].debitAccount} / {receipt.journalEntries[0].creditAccount}{" "}
+                            ¥{receipt.journalEntries[0].amount.toLocaleString()}
+                          </p>
+                        </div>
+                      )}
+
+                      {/* Action Buttons */}
+                      {receipt.journalEntries?.[0] && (
+                        <div className="flex gap-2 pt-1">
+                          <button
+                            onClick={(e) => { e.stopPropagation(); startEditReceipt(receipt); }}
+                            className="flex items-center gap-1 text-xs text-[#94A3B8] hover:text-[#D4AF37] transition-colors"
+                          >
+                            <Edit3 className="h-3 w-3" />
+                            編集
+                          </button>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); deleteJournalEntry(receipt.journalEntries[0].id); }}
+                            className="flex items-center gap-1 text-xs text-[#94A3B8] hover:text-red-400 transition-colors"
+                          >
+                            <Trash2 className="h-3 w-3" />
+                            削除
+                          </button>
+                        </div>
+                      )}
                     </div>
+
+                    {/* Inline Edit Form */}
+                    {editingReceiptId === receipt.id && receipt.journalEntries?.[0] && (
+                      <div className="border-t border-[rgba(212,175,55,0.1)] p-3 space-y-3 bg-[rgba(15,23,42,0.4)]">
+                        <div className="grid grid-cols-1 gap-2">
+                          <div className="space-y-1">
+                            <label className="text-xs text-[#94A3B8]">日付</label>
+                            <input type="date" value={editForm.date} onChange={(e) => setEditForm({ ...editForm, date: e.target.value })}
+                              className="w-full rounded-md bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.12)] text-[#F1F5F9] text-sm px-2 py-1.5" />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-xs text-[#94A3B8]">借方</label>
+                            <select value={editForm.debitAccount} onChange={(e) => setEditForm({ ...editForm, debitAccount: e.target.value })}
+                              className="w-full rounded-md bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.12)] text-[#F1F5F9] text-sm px-2 py-1.5">
+                              {ACCOUNTS.map((a) => <option key={a} value={a}>{a}</option>)}
+                            </select>
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-xs text-[#94A3B8]">貸方</label>
+                            <select value={editForm.creditAccount} onChange={(e) => setEditForm({ ...editForm, creditAccount: e.target.value })}
+                              className="w-full rounded-md bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.12)] text-[#F1F5F9] text-sm px-2 py-1.5">
+                              {ACCOUNTS.map((a) => <option key={a} value={a}>{a}</option>)}
+                            </select>
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-xs text-[#94A3B8]">金額</label>
+                            <input type="number" value={editForm.amount} onChange={(e) => setEditForm({ ...editForm, amount: Number(e.target.value) })}
+                              className="w-full rounded-md bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.12)] text-[#F1F5F9] text-sm px-2 py-1.5" />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-xs text-[#94A3B8]">摘要</label>
+                            <input type="text" value={editForm.description} onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
+                              className="w-full rounded-md bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.12)] text-[#F1F5F9] text-sm px-2 py-1.5" />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-xs text-[#94A3B8]">登録番号</label>
+                            <input type="text" value={editForm.invoiceNumber} onChange={(e) => setEditForm({ ...editForm, invoiceNumber: e.target.value })}
+                              className="w-full rounded-md bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.12)] text-[#F1F5F9] text-sm px-2 py-1.5" />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-xs text-[#94A3B8]">メモ</label>
+                            <input type="text" value={editForm.memo} onChange={(e) => setEditForm({ ...editForm, memo: e.target.value })}
+                              className="w-full rounded-md bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.12)] text-[#F1F5F9] text-sm px-2 py-1.5" />
+                          </div>
+                        </div>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => saveReceiptEdit(receipt.journalEntries[0].id)}
+                            className="flex-1 flex items-center justify-center gap-1 rounded-md bg-gradient-to-r from-[#D4AF37] to-[#B8962E] text-[#0F172A] font-semibold text-xs py-1.5"
+                          >
+                            <Save className="h-3 w-3" />
+                            保存
+                          </button>
+                          <button
+                            onClick={() => setEditingReceiptId(null)}
+                            className="flex-1 rounded-md bg-[#334155] text-[#F1F5F9] hover:bg-[#475569] text-xs py-1.5 transition-colors"
+                          >
+                            キャンセル
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
