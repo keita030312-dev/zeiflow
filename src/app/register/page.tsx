@@ -15,6 +15,7 @@ export default function RegisterPage() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [agreedToTerms, setAgreedToTerms] = useState(false);
 
   async function handleRegister(e: React.FormEvent) {
     e.preventDefault();
@@ -30,7 +31,7 @@ export default function RegisterPage() {
       const res = await fetch("/api/auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, email, password }),
+        body: JSON.stringify({ name, email, password, agreedToTerms }),
       });
       const data = await res.json();
 
@@ -153,10 +154,43 @@ export default function RegisterPage() {
                 </div>
               </div>
 
+              <div className="flex items-start gap-3">
+                <input
+                  type="checkbox"
+                  id="agreedToTerms"
+                  checked={agreedToTerms}
+                  onChange={(e) => setAgreedToTerms(e.target.checked)}
+                  className="mt-1 h-4 w-4 rounded border-[rgba(212,175,55,0.3)] bg-[rgba(15,23,42,0.5)] accent-[#D4AF37] cursor-pointer"
+                />
+                <label
+                  htmlFor="agreedToTerms"
+                  className="text-sm text-[#94A3B8] cursor-pointer select-none"
+                >
+                  <a
+                    href="/terms"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[#D4AF37] hover:text-[#E8D48B] underline transition-colors"
+                  >
+                    利用規約
+                  </a>
+                  {" と "}
+                  <a
+                    href="/privacy"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[#D4AF37] hover:text-[#E8D48B] underline transition-colors"
+                  >
+                    プライバシーポリシー
+                  </a>
+                  {" に同意する"}
+                </label>
+              </div>
+
               <Button
                 type="submit"
-                disabled={loading}
-                className="w-full bg-gradient-to-r from-[#D4AF37] to-[#B8962E] text-[#0F172A] font-semibold hover:from-[#E8D48B] hover:to-[#D4AF37] transition-all duration-300 shadow-lg shadow-[rgba(212,175,55,0.15)]"
+                disabled={loading || !agreedToTerms}
+                className="w-full bg-gradient-to-r from-[#D4AF37] to-[#B8962E] text-[#0F172A] font-semibold hover:from-[#E8D48B] hover:to-[#D4AF37] transition-all duration-300 shadow-lg shadow-[rgba(212,175,55,0.15)] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:from-[#D4AF37] disabled:hover:to-[#B8962E]"
               >
                 {loading ? "登録中..." : "アカウント作成"}
               </Button>

@@ -13,6 +13,9 @@ const registerSchema = z.object({
       "パスワードは大文字・小文字・数字を含めてください"
     ),
   name: z.string().min(1, "名前を入力してください"),
+  agreedToTerms: z.literal(true, {
+    errorMap: () => ({ message: "利用規約への同意が必要です" }),
+  }),
 });
 
 export async function POST(req: NextRequest) {
@@ -27,7 +30,14 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const { email, password, name } = parsed.data;
+    const { email, password, name, agreedToTerms } = parsed.data;
+
+    if (!agreedToTerms) {
+      return NextResponse.json(
+        { error: "利用規約への同意が必要です" },
+        { status: 400 }
+      );
+    }
 
     const existing = await prisma.user.findUnique({ where: { email } });
     if (existing) {
@@ -46,7 +56,7 @@ export async function POST(req: NextRequest) {
     await prisma.auditLog.create({
       data: {
         action: "REGISTER",
-        detail: `新規ユーザー登録: ${email}`,
+        detail: `新規ユーザー登録: ${email} (利用規約同意: ${new Date().toISOString()})`,
         userId: user.id,
       },
     });
