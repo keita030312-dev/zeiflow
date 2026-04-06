@@ -186,9 +186,6 @@ export default function PrivacyPage() {
             <p style={{ marginTop: 8 }}>
               メール：keita.030312@gmail.com
             </p>
-            <p style={{ marginTop: 4 }}>
-              ※所在地は準備中です。お問い合わせはメールにてお願いいたします。
-            </p>
           </div>
         </Section>
 
