@@ -54,7 +54,7 @@ export async function POST(req: NextRequest) {
     const cookieStore = await cookies();
     cookieStore.set("token", token, {
       httpOnly: true,
-      secure: !!process.env.HTTPS,
+      secure: process.env.NODE_ENV === "production" || !!process.env.VERCEL,
       sameSite: "lax",
       maxAge: 8 * 60 * 60,
       path: "/",

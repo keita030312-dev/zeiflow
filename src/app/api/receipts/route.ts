@@ -2,8 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireAuth } from "@/lib/auth-middleware";
 import { processReceipt } from "@/lib/ai/ocr";
-import { writeFile, mkdir } from "fs/promises";
-import path from "path";
 
 export async function GET(req: NextRequest) {
   const auth = requireAuth(req);
@@ -16,7 +14,13 @@ export async function GET(req: NextRequest) {
       ...(clientId ? { clientId } : {}),
     },
     orderBy: { uploadedAt: "desc" },
-    include: {
+    select: {
+      id: true,
+      imagePath: true,
+      imageMime: true,
+      ocrRaw: true,
+      status: true,
+      uploadedAt: true,
       client: { select: { name: true, code: true } },
       journalEntries: true,
     },
@@ -29,40 +33,36 @@ export async function POST(req: NextRequest) {
   const auth = requireAuth(req);
   if (auth instanceof NextResponse) return auth;
 
-  const formData = await req.formData();
-  const file = formData.get("file") as File;
-  const clientId = formData.get("clientId") as string;
-
-  if (!file || !clientId) {
-    return NextResponse.json(
-      { error: "ファイルと顧客を選択してください" },
-      { status: 400 }
-    );
-  }
-
-  // Save file
-  const bytes = await file.arrayBuffer();
-  const buffer = Buffer.from(bytes);
-  const uploadsDir = path.join(process.cwd(), "uploads", auth.id);
-  await mkdir(uploadsDir, { recursive: true });
-  const filename = `${Date.now()}-${file.name}`;
-  const filepath = path.join(uploadsDir, filename);
-  await writeFile(filepath, buffer);
-
-  // Create receipt record
-  const receipt = await prisma.receipt.create({
-    data: {
-      imagePath: `uploads/${auth.id}/${filename}`,
-      clientId,
-      userId: auth.id,
-      status: "PROCESSING",
-    },
-  });
-
   try {
-    // Process with Claude Vision
+    const formData = await req.formData();
+    const file = formData.get("file") as File;
+    const clientId = formData.get("clientId") as string;
+
+    if (!file || !clientId) {
+      return NextResponse.json(
+        { error: "ファイルと顧客を選択してください" },
+        { status: 400 }
+      );
+    }
+
+    const bytes = await file.arrayBuffer();
+    const buffer = Buffer.from(bytes);
     const base64 = buffer.toString("base64");
     const mimeType = file.type || "image/jpeg";
+
+    // Save receipt with image data in DB
+    const receipt = await prisma.receipt.create({
+      data: {
+        imagePath: `receipt-${Date.now()}.jpg`,
+        imageData: base64,
+        imageMime: mimeType,
+        clientId,
+        userId: auth.id,
+        status: "PROCESSING",
+      },
+    });
+
+    // Process with Claude Vision
     const result = await processReceipt(base64, mimeType, auth.id);
 
     // Update receipt with OCR data
@@ -74,7 +74,7 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    // Create journal entry from classification
+    // Create journal entry
     const journalEntry = await prisma.journalEntry.create({
       data: {
         date: new Date(result.ocr.date || new Date()),
@@ -98,13 +98,10 @@ export async function POST(req: NextRequest) {
       journalEntry,
     });
   } catch (error) {
-    await prisma.receipt.update({
-      where: { id: receipt.id },
-      data: { status: "ERROR" },
-    });
-    console.error("OCR error:", error);
+    console.error("Receipt error:", error);
+    const message = error instanceof Error ? error.message : String(error);
     return NextResponse.json(
-      { error: "レシートの読み取りに失敗しました", receipt },
+      { error: "レシートの処理に失敗しました: " + message },
       { status: 500 }
     );
   }

@@ -69,6 +69,8 @@ enum TaxType {
 model Receipt {
   id          String        @id @default(cuid())
   imagePath   String        @map("image_path")
+  imageData   String?       @map("image_data")
+  imageMime   String?       @map("image_mime")
   ocrRaw      String?       @map("ocr_raw")
   status      ReceiptStatus @default(PENDING)
   uploadedAt  DateTime      @default(now()) @map("uploaded_at")
