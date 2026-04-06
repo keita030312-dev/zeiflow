@@ -3,20 +3,8 @@ import { compare } from "bcryptjs";
 import { sign } from "jsonwebtoken";
 import { prisma } from "@/lib/db";
 import { cookies } from "next/headers";
-import { getClientIp, isRateLimited } from "@/lib/rate-limit";
-
 export async function POST(req: NextRequest) {
   try {
-    const ip = getClientIp(req);
-    if (isRateLimited(ip)) {
-      return NextResponse.json(
-        {
-          error:
-            "ログイン試行回数が上限に達しました。15分後に再度お試しください",
-        },
-        { status: 429 }
-      );
-    }
 
     const { email, password, totpCode } = await req.json();
 

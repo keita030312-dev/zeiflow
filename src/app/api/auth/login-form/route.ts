@@ -3,8 +3,6 @@ import { compare } from "bcryptjs";
 import { sign } from "jsonwebtoken";
 import { prisma } from "@/lib/db";
 import { cookies } from "next/headers";
-import { getClientIp, isRateLimited } from "@/lib/rate-limit";
-
 function buildUrl(path: string, req: NextRequest) {
   const host = req.headers.get("host") || "localhost:3000";
   const proto = req.headers.get("x-forwarded-proto") || "http";
@@ -13,8 +11,8 @@ function buildUrl(path: string, req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    const ip = getClientIp(req);
-    if (isRateLimited(ip)) {
+    // Rate limiting disabled for serverless (Vercel)
+    if (false) {
       return NextResponse.redirect(
         buildUrl(
           "/login?error=ログイン試行回数が上限に達しました。15分後に再度お試しください",
