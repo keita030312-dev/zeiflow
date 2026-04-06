@@ -207,8 +207,9 @@ export default function ReceiptsPage() {
         setResult(data);
         toast.success("レシートを読み取りました");
         fetchReceipts();
-      } catch {
-        toast.error("読み取りに失敗しました");
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        toast.error("エラー: " + msg);
       } finally {
         setProcessing(false);
       }
