@@ -3,6 +3,14 @@ import { compare } from "bcryptjs";
 import { sign } from "jsonwebtoken";
 import { prisma } from "@/lib/db";
 import { cookies } from "next/headers";
+
+function redirect303(url: string) {
+  return new NextResponse(null, {
+    status: 303,
+    headers: { Location: url },
+  });
+}
+
 function buildUrl(path: string, req: NextRequest) {
   const host = req.headers.get("host") || "localhost:3000";
   const proto = req.headers.get("x-forwarded-proto") || "http";
@@ -11,32 +19,22 @@ function buildUrl(path: string, req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    // Rate limiting disabled for serverless (Vercel)
-    if (false) {
-      return NextResponse.redirect(
-        buildUrl(
-          "/login?error=ログイン試行回数が上限に達しました。15分後に再度お試しください",
-          req
-        )
-      );
-    }
-
     const formData = await req.formData();
     const email = formData.get("email") as string;
     const password = formData.get("password") as string;
 
     if (!email || !password) {
-      return NextResponse.redirect(buildUrl("/login?error=入力してください", req));
+      return redirect303(buildUrl("/login?error=入力してください", req));
     }
 
     const user = await prisma.user.findUnique({ where: { email } });
     if (!user) {
-      return NextResponse.redirect(buildUrl("/login?error=メールアドレスまたはパスワードが正しくありません", req));
+      return redirect303(buildUrl("/login?error=メールアドレスまたはパスワードが正しくありません", req));
     }
 
     const isValid = await compare(password, user.passwordHash);
     if (!isValid) {
-      return NextResponse.redirect(buildUrl("/login?error=メールアドレスまたはパスワードが正しくありません", req));
+      return redirect303(buildUrl("/login?error=メールアドレスまたはパスワードが正しくありません", req));
     }
 
     const token = sign(
@@ -54,8 +52,8 @@ export async function POST(req: NextRequest) {
       path: "/",
     });
 
-    return NextResponse.redirect(buildUrl("/dashboard", req));
+    return redirect303(buildUrl("/dashboard", req));
   } catch {
-    return NextResponse.redirect(buildUrl("/login?error=サーバーエラー", req));
+    return redirect303(buildUrl("/login?error=サーバーエラー", req));
   }
 }
