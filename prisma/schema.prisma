@@ -1,0 +1,159 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  name          String
+  passwordHash  String    @map("password_hash")
+  totpSecret      String?   @map("totp_secret")
+  totpEnabled     Boolean   @default(false) @map("totp_enabled")
+  anthropicApiKey String?   @map("anthropic_api_key")
+  role            Role      @default(STAFF)
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  clients       Client[]
+  receipts      Receipt[]
+  journalEntries JournalEntry[]
+  exportLogs    ExportLog[]
+  auditLogs     AuditLog[]
+
+  @@map("users")
+}
+
+enum Role {
+  ADMIN
+  STAFF
+}
+
+model Client {
+  id              String    @id @default(cuid())
+  code            String    @unique
+  name            String
+  nameKana        String?   @map("name_kana")
+  clientType      ClientType @default(CORPORATE) @map("client_type")
+  fiscalYearStart Int       @default(4) @map("fiscal_year_start")
+  taxType         TaxType   @default(STANDARD) @map("tax_type")
+  invoiceRegNumber String?  @map("invoice_reg_number")
+  notes           String?
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+  userId          String    @map("user_id")
+
+  user            User      @relation(fields: [userId], references: [id])
+  receipts        Receipt[]
+  journalEntries  JournalEntry[]
+  exportLogs      ExportLog[]
+
+  @@map("clients")
+}
+
+enum ClientType {
+  CORPORATE
+  INDIVIDUAL
+}
+
+enum TaxType {
+  STANDARD
+  SIMPLIFIED
+  EXEMPT
+}
+
+model Receipt {
+  id          String        @id @default(cuid())
+  imagePath   String        @map("image_path")
+  ocrRaw      String?       @map("ocr_raw")
+  status      ReceiptStatus @default(PENDING)
+  uploadedAt  DateTime      @default(now()) @map("uploaded_at")
+  clientId    String        @map("client_id")
+  userId      String        @map("user_id")
+
+  client      Client        @relation(fields: [clientId], references: [id])
+  user        User          @relation(fields: [userId], references: [id])
+  journalEntries JournalEntry[]
+
+  @@map("receipts")
+}
+
+enum ReceiptStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  ERROR
+}
+
+model JournalEntry {
+  id              String    @id @default(cuid())
+  date            DateTime
+  debitAccount    String    @map("debit_account")
+  debitSubAccount String?   @map("debit_sub_account")
+  creditAccount   String    @map("credit_account")
+  creditSubAccount String?  @map("credit_sub_account")
+  amount          Int
+  taxAmount       Int?      @map("tax_amount")
+  taxRate         Float?    @map("tax_rate")
+  description     String
+  invoiceNumber   String?   @map("invoice_number")
+  memo            String?
+  isConfirmed     Boolean   @default(false) @map("is_confirmed")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+  clientId        String    @map("client_id")
+  userId          String    @map("user_id")
+  receiptId       String?   @map("receipt_id")
+
+  client          Client    @relation(fields: [clientId], references: [id])
+  user            User      @relation(fields: [userId], references: [id])
+  receipt         Receipt?  @relation(fields: [receiptId], references: [id])
+
+  @@map("journal_entries")
+}
+
+model ExportLog {
+  id          String      @id @default(cuid())
+  format      ExportFormat
+  periodType  PeriodType  @map("period_type")
+  periodStart DateTime    @map("period_start")
+  periodEnd   DateTime    @map("period_end")
+  recordCount Int         @map("record_count")
+  exportedAt  DateTime    @default(now()) @map("exported_at")
+  clientId    String      @map("client_id")
+  userId      String      @map("user_id")
+
+  client      Client      @relation(fields: [clientId], references: [id])
+  user        User        @relation(fields: [userId], references: [id])
+
+  @@map("export_logs")
+}
+
+enum ExportFormat {
+  YAYOI
+  MONEYFORWARD
+  FREEE
+}
+
+enum PeriodType {
+  MONTHLY
+  SEMI_ANNUAL
+  ANNUAL
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  action    String
+  detail    String?
+  ipAddress String?  @map("ip_address")
+  createdAt DateTime @default(now()) @map("created_at")
+  userId    String   @map("user_id")
+
+  user      User     @relation(fields: [userId], references: [id])
+
+  @@map("audit_logs")
+}
