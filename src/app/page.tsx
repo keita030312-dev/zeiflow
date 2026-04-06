@@ -106,7 +106,10 @@ export default function Home() {
       <footer className="relative z-10 border-t border-[rgba(212,175,55,0.06)] py-6 px-8">
         <div className="max-w-7xl mx-auto flex items-center justify-between text-xs text-[#475569]">
           <span>ZeiFlow - 税理士事務所向け仕訳管理システム</span>
-          <span>セキュリティ保護済み</span>
+          <div className="flex items-center gap-4">
+            <Link href="/terms" className="hover:text-[#D4AF37] transition-colors">利用規約</Link>
+            <Link href="/privacy" className="hover:text-[#D4AF37] transition-colors">プライバシーポリシー</Link>
+          </div>
         </div>
       </footer>
     </div>
