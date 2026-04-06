@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev --hostname 0.0.0.0",
-    "build": "npx prisma generate --no-config && next build",
+    "build": "npx prisma generate --schema=prisma/schema.prisma && next build",
     "db:push": "prisma db push",
     "start": "next start --hostname 0.0.0.0",
     "lint": "eslint"
