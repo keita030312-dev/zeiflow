@@ -40,7 +40,7 @@ export default function TermsPage() {
 
         <Section title="第1条（サービス概要）">
           <p>
-            本規約は、[運営者名]（以下「当社」）が提供する税務会計支援SaaSサービス「ZeiFlow」（以下「本サービス」）の利用条件を定めるものです。本サービスは、税理士事務所および会計事務所向けに、レシート・領収書のAI読み取り、仕訳データの管理、および会計ソフト連携CSV出力機能を提供します。
+            本規約は、ZeiFlow（以下「当社」）が提供する税務会計支援SaaSサービス「ZeiFlow」（以下「本サービス」）の利用条件を定めるものです。本サービスは、税理士事務所および会計事務所向けに、レシート・領収書のAI読み取り、仕訳データの管理、および会計ソフト連携CSV出力機能を提供します。
           </p>
         </Section>
 
@@ -211,7 +211,7 @@ export default function TermsPage() {
           }}
         >
           <p style={{ color: "#475569", fontSize: 13 }}>
-            [運営者名] - ZeiFlow 利用規約
+            ZeiFlow - ZeiFlow 利用規約
           </p>
         </div>
       </div>

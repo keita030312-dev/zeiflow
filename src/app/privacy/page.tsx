@@ -181,13 +181,13 @@ export default function PrivacyPage() {
             }}
           >
             <p>
-              <strong style={{ color: "#F1F5F9" }}>[運営者名]</strong>
+              <strong style={{ color: "#F1F5F9" }}>ZeiFlow</strong>
             </p>
             <p style={{ marginTop: 8 }}>
-              メール：[メールアドレス]
+              メール：keita.030312@gmail.com
             </p>
             <p style={{ marginTop: 4 }}>
-              所在地：[住所]
+              ※所在地は準備中です。お問い合わせはメールにてお願いいたします。
             </p>
           </div>
         </Section>
@@ -207,7 +207,7 @@ export default function PrivacyPage() {
           }}
         >
           <p style={{ color: "#475569", fontSize: 13 }}>
-            [運営者名] - ZeiFlow プライバシーポリシー
+            ZeiFlow - ZeiFlow プライバシーポリシー
           </p>
         </div>
       </div>
