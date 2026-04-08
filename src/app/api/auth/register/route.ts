@@ -13,9 +13,7 @@ const registerSchema = z.object({
       "パスワードは大文字・小文字・数字を含めてください"
     ),
   name: z.string().min(1, "名前を入力してください"),
-  agreedToTerms: z.literal(true, {
-    errorMap: () => ({ message: "利用規約への同意が必要です" }),
-  }),
+  agreedToTerms: z.literal(true, { error: "利用規約への同意が必要です" }),
 });
 
 export async function POST(req: NextRequest) {
