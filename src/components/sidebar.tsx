@@ -14,6 +14,7 @@ import {
   Menu,
   ClipboardList,
   Building2,
+  HelpCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
@@ -32,6 +33,7 @@ const navItems = [
   { href: "/dashboard/audit", label: "監査ログ", icon: ClipboardList },
   { href: "/dashboard/org", label: "チーム管理", icon: Building2 },
   { href: "/dashboard/settings", label: "設定", icon: Settings },
+  { href: "/dashboard/help", label: "ヘルプ", icon: HelpCircle },
 ];
 
 function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
