@@ -29,7 +29,7 @@ export async function processReceipt(
   const today = new Date().toISOString().split("T")[0];
 
   const response = await anthropic.messages.create({
-    model: "claude-sonnet-4-20250514",
+    model: "claude-haiku-4-20250414",
     max_tokens: 2000,
     temperature: 0,
     messages: [
