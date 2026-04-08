@@ -226,11 +226,12 @@ export default function ReceiptsPage() {
     setResult(null);
   }
 
-  async function compressImage(file: File, maxWidth = 1200): Promise<File> {
+  async function compressImage(file: File): Promise<File> {
     return new Promise((resolve) => {
       const img = new Image();
       img.onload = () => {
         const canvas = document.createElement("canvas");
+        const maxWidth = 800;
         let w = img.width;
         let h = img.height;
         if (w > maxWidth) {
@@ -240,7 +241,24 @@ export default function ReceiptsPage() {
         canvas.width = w;
         canvas.height = h;
         const ctx = canvas.getContext("2d")!;
+
+        // 白背景
+        ctx.fillStyle = "#fff";
+        ctx.fillRect(0, 0, w, h);
         ctx.drawImage(img, 0, 0, w, h);
+
+        // コントラスト強調 + シャープ化
+        const imageData = ctx.getImageData(0, 0, w, h);
+        const d = imageData.data;
+        for (let i = 0; i < d.length; i += 4) {
+          // グレースケール
+          const gray = d[i] * 0.299 + d[i+1] * 0.587 + d[i+2] * 0.114;
+          // コントラスト強調 (1.4倍)
+          const v = Math.min(255, Math.max(0, ((gray - 128) * 1.4) + 128));
+          d[i] = d[i+1] = d[i+2] = v;
+        }
+        ctx.putImageData(imageData, 0, 0);
+
         canvas.toBlob(
           (blob) => {
             if (blob) {
@@ -250,7 +268,7 @@ export default function ReceiptsPage() {
             }
           },
           "image/jpeg",
-          0.85
+          0.8
         );
       };
       img.onerror = () => resolve(file);
