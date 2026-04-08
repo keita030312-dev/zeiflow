@@ -14,7 +14,8 @@ function getAnthropicClient(apiKey?: string | null) {
 export async function processReceipt(
   imageBase64: string,
   mimeType: string = "image/jpeg",
-  userId?: string
+  userId?: string,
+  quality: "fast" | "accurate" = "fast"
 ): Promise<{ ocr: OcrResult & { invoiceNumber?: string }; classification: ClassificationResult }> {
   let userApiKey: string | null = null;
   if (userId) {
@@ -28,8 +29,10 @@ export async function processReceipt(
 
   const today = new Date().toISOString().split("T")[0];
 
+  const model = quality === "accurate" ? "claude-sonnet-4-20250514" : "claude-haiku-4-20250414";
+
   const response = await anthropic.messages.create({
-    model: "claude-haiku-4-20250414",
+    model,
     max_tokens: 2000,
     temperature: 0,
     messages: [

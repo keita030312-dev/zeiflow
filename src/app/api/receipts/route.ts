@@ -38,6 +38,7 @@ export async function POST(req: NextRequest) {
     const formData = await req.formData();
     const file = formData.get("file") as File;
     const clientId = formData.get("clientId") as string;
+    const quality = (formData.get("quality") as string) === "accurate" ? "accurate" as const : "fast" as const;
 
     if (!file || !clientId) {
       return NextResponse.json(
@@ -65,7 +66,7 @@ export async function POST(req: NextRequest) {
     });
 
     // Process with Claude Vision
-    const result = await processReceipt(base64, mimeType, auth.id);
+    const result = await processReceipt(base64, mimeType, auth.id, quality);
 
     // Update receipt with OCR data
     await prisma.receipt.update({

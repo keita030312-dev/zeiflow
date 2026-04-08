@@ -258,11 +258,12 @@ export default function ReceiptsPage() {
     });
   }
 
-  async function uploadSingleFile(file: File): Promise<ReceiptResult | null> {
+  async function uploadSingleFile(file: File, quality: "fast" | "accurate" = "fast"): Promise<ReceiptResult | null> {
     const compressed = await compressImage(file);
     const formData = new FormData();
     formData.append("file", compressed);
     formData.append("clientId", selectedClient);
+    formData.append("quality", quality);
 
     const res = await fetch("/api/receipts", {
       method: "POST",
@@ -276,7 +277,10 @@ export default function ReceiptsPage() {
     }
   }
 
-  async function handleUpload() {
+  const [uploadQuality, setUploadQuality] = useState<"fast" | "accurate">("fast");
+
+  async function handleUpload(quality?: "fast" | "accurate") {
+    const q = quality || uploadQuality;
     if (files.length === 0 || !selectedClient) {
       toast.error("顧客とファイルを選択してください");
       return;
@@ -288,7 +292,7 @@ export default function ReceiptsPage() {
     if (files.length === 1) {
       // Single file upload
       try {
-        const data = await uploadSingleFile(files[0]);
+        const data = await uploadSingleFile(files[0], q);
         setResult(data);
         toast.success("レシートを読み取りました");
         fetchReceipts();
@@ -307,7 +311,7 @@ export default function ReceiptsPage() {
       for (let i = 0; i < files.length; i++) {
         setUploadProgress({ current: i + 1, total: files.length });
         try {
-          lastResult = await uploadSingleFile(files[i]);
+          lastResult = await uploadSingleFile(files[i], q);
           successCount++;
         } catch {
           toast.error(`${files[i].name} の読み取りに失敗しました`);
@@ -605,13 +609,21 @@ export default function ReceiptsPage() {
 
               {/* Upload Button */}
               {files.length > 0 && !processing && !result && (
-                <Button
-                  onClick={handleUpload}
-                  className="w-full bg-gradient-to-r from-[#D4AF37] to-[#B8962E] text-[#0F172A] font-semibold"
-                >
-                  <Upload className="h-4 w-4 mr-2" />
-                  {files.length > 1 ? `${files.length}件を一括読み取り` : "AI読み取り開始"}
-                </Button>
+                <div className="flex gap-2">
+                  <Button
+                    onClick={() => handleUpload("fast")}
+                    className="flex-1 bg-gradient-to-r from-[#D4AF37] to-[#B8962E] text-[#0F172A] font-semibold"
+                  >
+                    <Upload className="h-4 w-4 mr-2" />
+                    {files.length > 1 ? `${files.length}件 高速読み取り` : "⚡ 高速読み取り"}
+                  </Button>
+                  <Button
+                    onClick={() => handleUpload("accurate")}
+                    className="flex-1 bg-[#334155] text-[#F1F5F9] hover:bg-[#475569] font-semibold"
+                  >
+                    {files.length > 1 ? `${files.length}件 高精度` : "🎯 高精度読み取り"}
+                  </Button>
+                </div>
               )}
 
               {processing && (
