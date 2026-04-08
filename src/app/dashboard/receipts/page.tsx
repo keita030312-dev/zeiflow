@@ -611,17 +611,17 @@ export default function ReceiptsPage() {
               {files.length > 0 && !processing && !result && (
                 <div className="flex gap-2">
                   <Button
-                    onClick={() => handleUpload("fast")}
+                    onClick={() => handleUpload("accurate")}
                     className="flex-1 bg-gradient-to-r from-[#D4AF37] to-[#B8962E] text-[#0F172A] font-semibold"
                   >
                     <Upload className="h-4 w-4 mr-2" />
-                    {files.length > 1 ? `${files.length}件 高速読み取り` : "⚡ 高速読み取り"}
+                    {files.length > 1 ? `${files.length}件を読み取り` : "AI読み取り"}
                   </Button>
                   <Button
-                    onClick={() => handleUpload("accurate")}
-                    className="flex-1 bg-[#334155] text-[#F1F5F9] hover:bg-[#475569] font-semibold"
+                    onClick={() => handleUpload("fast")}
+                    className="bg-[#334155] text-[#F1F5F9] hover:bg-[#475569] text-xs px-3"
                   >
-                    {files.length > 1 ? `${files.length}件 高精度` : "🎯 高精度読み取り"}
+                    簡易
                   </Button>
                 </div>
               )}
