@@ -1,0 +1,12 @@
+{
+  "name": "ZeiFlow - 税理士事務所向け仕訳管理",
+  "short_name": "ZeiFlow",
+  "description": "レシート撮影→AI自動仕訳→CSV出力",
+  "start_url": "/dashboard",
+  "display": "standalone",
+  "background_color": "#0F172A",
+  "theme_color": "#D4AF37",
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml" }
+  ]
+}

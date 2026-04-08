@@ -12,6 +12,8 @@ model User {
   email         String    @unique
   name          String
   passwordHash  String    @map("password_hash")
+  resetToken        String?   @map("reset_token")
+  resetTokenExpiry  DateTime? @map("reset_token_expiry")
   totpSecret      String?   @map("totp_secret")
   totpEnabled     Boolean   @default(false) @map("totp_enabled")
   anthropicApiKey String?   @map("anthropic_api_key")

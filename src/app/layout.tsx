@@ -19,6 +19,15 @@ export const metadata: Metadata = {
   title: "ZeiFlow | 税理士事務所向け仕訳管理システム",
   description:
     "レシート撮影→AI自動仕分け→弥生会計・マネーフォワード・freee対応CSV出力",
+  icons: {
+    icon: "/icon.svg",
+    apple: "/icon.svg",
+  },
+  manifest: "/manifest.json",
+  other: {
+    "theme-color": "#D4AF37",
+    "apple-mobile-web-app-capable": "yes",
+  },
 };
 
 export default function RootLayout({

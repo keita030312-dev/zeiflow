@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Settings, Shield, Key, QrCode, ExternalLink, CheckCircle, AlertTriangle } from "lucide-react";
+import { Settings, Shield, Key, QrCode, ExternalLink, CheckCircle, AlertTriangle, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -15,6 +15,9 @@ export default function SettingsPage() {
   const [totpQrUrl, setTotpQrUrl] = useState("");
   const [totpCode, setTotpCode] = useState("");
   const [totpLoading, setTotpLoading] = useState(false);
+
+  // Backup state
+  const [backupLoading, setBackupLoading] = useState(false);
 
   // Password change state
   const [currentPassword, setCurrentPassword] = useState("");
@@ -428,6 +431,56 @@ export default function SettingsPage() {
                   </Button>
                 </div>
               </div>
+            </CardContent>
+          </Card>
+        </div>
+        {/* Data Backup */}
+        <div>
+          <Card className="glass-card border-[rgba(212,175,55,0.08)]">
+            <CardHeader>
+              <CardTitle className="text-base text-[#F1F5F9] flex items-center gap-2">
+                <Download className="h-4 w-4 text-[#D4AF37]" />
+                データバックアップ
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <p className="text-sm text-[#94A3B8]">
+                顧客・仕訳・エクスポート履歴・監査ログをJSON形式でダウンロードします。
+              </p>
+              <Button
+                onClick={async () => {
+                  setBackupLoading(true);
+                  try {
+                    const res = await fetch("/api/backup");
+                    if (!res.ok) {
+                      const data = await res.json();
+                      toast.error(data.error || "バックアップに失敗しました");
+                      return;
+                    }
+                    const blob = await res.blob();
+                    const disposition = res.headers.get("Content-Disposition") || "";
+                    const match = disposition.match(/filename="(.+)"/);
+                    const filename = match ? match[1] : "zeiflow-backup.json";
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement("a");
+                    a.href = url;
+                    a.download = filename;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+                    toast.success("バックアップをダウンロードしました");
+                  } catch {
+                    toast.error("通信エラーが発生しました");
+                  } finally {
+                    setBackupLoading(false);
+                  }
+                }}
+                disabled={backupLoading}
+                className="bg-gradient-to-r from-[#D4AF37] to-[#B8962E] text-[#0F172A] font-semibold disabled:opacity-40"
+              >
+                {backupLoading ? "バックアップ中..." : "データバックアップ"}
+              </Button>
             </CardContent>
           </Card>
         </div>
