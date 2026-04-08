@@ -1,16 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { requireAuth } from "@/lib/auth-middleware";
+import { requireAuth, getScope } from "@/lib/auth-middleware";
 import { processReceipt } from "@/lib/ai/ocr";
 
 export async function GET(req: NextRequest) {
   const auth = requireAuth(req);
   if (auth instanceof NextResponse) return auth;
 
+  const scope = getScope(auth);
   const clientId = req.nextUrl.searchParams.get("clientId");
   const receipts = await prisma.receipt.findMany({
     where: {
-      userId: auth.id,
+      ...scope,
       ...(clientId ? { clientId } : {}),
     },
     orderBy: { uploadedAt: "desc" },
@@ -58,6 +59,7 @@ export async function POST(req: NextRequest) {
         imageMime: mimeType,
         clientId,
         userId: auth.id,
+        ...(auth.orgId ? { organizationId: auth.orgId } : {}),
         status: "PROCESSING",
       },
     });
@@ -87,6 +89,7 @@ export async function POST(req: NextRequest) {
         invoiceNumber: result.ocr.invoiceNumber || null,
         clientId,
         userId: auth.id,
+        ...(auth.orgId ? { organizationId: auth.orgId } : {}),
         receiptId: receipt.id,
       },
     });

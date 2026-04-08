@@ -37,8 +37,13 @@ export async function POST(req: NextRequest) {
       return redirect303(buildUrl("/login?error=メールアドレスまたはパスワードが正しくありません", req));
     }
 
+    const tokenPayload: Record<string, unknown> = { id: user.id, email: user.email, role: user.role };
+    if (user.organizationId) {
+      tokenPayload.orgId = user.organizationId;
+    }
+
     const token = sign(
-      { id: user.id, email: user.email, role: user.role },
+      tokenPayload,
       process.env.NEXTAUTH_SECRET!,
       { expiresIn: "8h" }
     );

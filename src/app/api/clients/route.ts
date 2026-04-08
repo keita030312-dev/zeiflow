@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { requireAuth } from "@/lib/auth-middleware";
+import { requireAuth, getScope } from "@/lib/auth-middleware";
 import { z } from "zod";
 
 const clientSchema = z.object({
@@ -22,8 +22,9 @@ export async function GET(req: NextRequest) {
   const auth = requireAuth(req);
   if (auth instanceof NextResponse) return auth;
 
+  const scope = getScope(auth);
   const clients = await prisma.client.findMany({
-    where: { userId: auth.id },
+    where: scope,
     orderBy: { createdAt: "desc" },
     include: {
       _count: {
@@ -48,8 +49,9 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const existing = await prisma.client.findUnique({
-    where: { code: parsed.data.code },
+  const scope = getScope(auth);
+  const existing = await prisma.client.findFirst({
+    where: { code: parsed.data.code, ...scope },
   });
   if (existing) {
     return NextResponse.json(
@@ -64,6 +66,7 @@ export async function POST(req: NextRequest) {
       ...rest,
       invoiceRegNumber: invoiceRegNumber || null,
       userId: auth.id,
+      ...(auth.orgId ? { organizationId: auth.orgId } : {}),
     },
   });
 
@@ -100,8 +103,9 @@ export async function PUT(req: NextRequest) {
   }
 
   // Verify ownership
+  const scope = getScope(auth);
   const existing = await prisma.client.findFirst({
-    where: { id: parsed.data.id, userId: auth.id },
+    where: { id: parsed.data.id, ...scope },
   });
   if (!existing) {
     return NextResponse.json(
@@ -115,6 +119,7 @@ export async function PUT(req: NextRequest) {
     where: {
       code: parsed.data.code,
       id: { not: parsed.data.id },
+      ...scope,
     },
   });
   if (codeConflict) {
@@ -150,8 +155,9 @@ export async function DELETE(req: NextRequest) {
   }
 
   // Verify ownership
+  const scope = getScope(auth);
   const existing = await prisma.client.findFirst({
-    where: { id, userId: auth.id },
+    where: { id, ...scope },
     include: {
       _count: { select: { journalEntries: true, receipts: true } },
     },

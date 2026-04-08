@@ -5,6 +5,14 @@ interface TokenPayload {
   id: string;
   email: string;
   role: string;
+  orgId?: string;
+}
+
+export function getScope(auth: TokenPayload): { userId?: string; organizationId?: string } {
+  if (auth.orgId) {
+    return { organizationId: auth.orgId };
+  }
+  return { userId: auth.id };
 }
 
 export function getUser(req: NextRequest): TokenPayload | null {

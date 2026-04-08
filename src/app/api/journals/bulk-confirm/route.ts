@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { requireAuth } from "@/lib/auth-middleware";
+import { requireAuth, getScope } from "@/lib/auth-middleware";
 import { z } from "zod";
 
 const bulkConfirmSchema = z.object({
@@ -22,10 +22,11 @@ export async function POST(req: NextRequest) {
 
   const { ids } = parsed.data;
 
+  const scope = getScope(auth);
   const result = await prisma.journalEntry.updateMany({
     where: {
       id: { in: ids },
-      userId: auth.id,
+      ...scope,
     },
     data: {
       isConfirmed: true,

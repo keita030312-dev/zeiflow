@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { requireAuth } from "@/lib/auth-middleware";
+import { requireAuth, getScope } from "@/lib/auth-middleware";
 import { z } from "zod";
 
 const journalSchema = z.object({
@@ -30,7 +30,8 @@ export async function GET(req: NextRequest) {
   const page = Math.max(1, parseInt(req.nextUrl.searchParams.get("page") || "1", 10));
   const limit = Math.min(200, Math.max(1, parseInt(req.nextUrl.searchParams.get("limit") || "50", 10)));
 
-  const where: Record<string, unknown> = { userId: auth.id };
+  const scope = getScope(auth);
+  const where: Record<string, unknown> = { ...scope };
   if (clientId) where.clientId = clientId;
   if (confirmed !== null) where.isConfirmed = confirmed === "true";
   if (startDate || endDate) {
@@ -80,6 +81,7 @@ export async function POST(req: NextRequest) {
       ...parsed.data,
       date: new Date(parsed.data.date),
       userId: auth.id,
+      ...(auth.orgId ? { organizationId: auth.orgId } : {}),
     },
   });
 
@@ -100,8 +102,9 @@ export async function PUT(req: NextRequest) {
     );
   }
 
+  const scope = getScope(auth);
   const existing = await prisma.journalEntry.findFirst({
-    where: { id, userId: auth.id },
+    where: { id, ...scope },
   });
   if (!existing) {
     return NextResponse.json(
@@ -133,8 +136,9 @@ export async function DELETE(req: NextRequest) {
     );
   }
 
+  const scope = getScope(auth);
   const existing = await prisma.journalEntry.findFirst({
-    where: { id, userId: auth.id },
+    where: { id, ...scope },
   });
   if (!existing) {
     return NextResponse.json(

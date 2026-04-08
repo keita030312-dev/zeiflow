@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { requireAuth } from "@/lib/auth-middleware";
+import { requireAuth, getScope } from "@/lib/auth-middleware";
 import { generateYayoiCsv } from "@/lib/csv/yayoi";
 import { generateMoneyForwardCsv } from "@/lib/csv/moneyforward";
 import { generateFreeeCsv } from "@/lib/csv/freee";
@@ -37,10 +37,11 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const scope = getScope(auth);
     const entries = await prisma.journalEntry.findMany({
       where: {
         clientId,
-        userId: auth.id,
+        ...scope,
         date: {
           gte: start,
           lte: end,
@@ -118,6 +119,7 @@ export async function POST(req: NextRequest) {
           recordCount: entries.length,
           clientId,
           userId: auth.id,
+          ...(auth.orgId ? { organizationId: auth.orgId } : {}),
         },
       });
     } catch {

@@ -13,6 +13,7 @@ import {
   Shield,
   Menu,
   ClipboardList,
+  Building2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
@@ -29,6 +30,7 @@ const navItems = [
   { href: "/dashboard/journals", label: "仕訳管理", icon: BookOpen },
   { href: "/dashboard/export", label: "CSV出力", icon: FileDown },
   { href: "/dashboard/audit", label: "監査ログ", icon: ClipboardList },
+  { href: "/dashboard/org", label: "チーム管理", icon: Building2 },
   { href: "/dashboard/settings", label: "設定", icon: Settings },
 ];
 

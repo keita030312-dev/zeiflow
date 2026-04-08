@@ -1,19 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { requireAuth } from "@/lib/auth-middleware";
+import { requireAuth, getScope } from "@/lib/auth-middleware";
 
 export async function GET(req: NextRequest) {
   try {
     const auth = requireAuth(req);
     if (auth instanceof NextResponse) return auth;
 
+    const scope = getScope(auth);
     const [clients, journals, exportLogs, auditLogs] = await Promise.all([
       prisma.client.findMany({
-        where: { userId: auth.id },
+        where: scope,
         orderBy: { createdAt: "desc" },
       }),
       prisma.journalEntry.findMany({
-        where: { userId: auth.id },
+        where: scope,
         orderBy: { date: "desc" },
         include: {
           receipt: {
@@ -26,11 +27,11 @@ export async function GET(req: NextRequest) {
         },
       }),
       prisma.exportLog.findMany({
-        where: { userId: auth.id },
+        where: scope,
         orderBy: { exportedAt: "desc" },
       }),
       prisma.auditLog.findMany({
-        where: { userId: auth.id },
+        where: scope,
         orderBy: { createdAt: "desc" },
       }),
     ]);

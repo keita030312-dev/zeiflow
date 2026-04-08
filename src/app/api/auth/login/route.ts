@@ -45,8 +45,13 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    const tokenPayload: Record<string, unknown> = { id: user.id, email: user.email, role: user.role };
+    if (user.organizationId) {
+      tokenPayload.orgId = user.organizationId;
+    }
+
     const token = sign(
-      { id: user.id, email: user.email, role: user.role },
+      tokenPayload,
       process.env.NEXTAUTH_SECRET!,
       { expiresIn: "8h" }
     );
@@ -70,7 +75,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      user: { id: user.id, name: user.name, email: user.email, role: user.role },
+      user: { id: user.id, name: user.name, email: user.email, role: user.role, orgId: user.organizationId },
     });
   } catch (error) {
     console.error("Login error:", error);
