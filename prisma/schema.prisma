@@ -7,11 +7,25 @@ datasource db {
   provider = "postgresql"
 }
 
+model SystemConfig {
+  id    String @id @default("system")
+  key   String @unique
+  value String
+
+  @@map("system_config")
+}
+
 model Organization {
   id        String   @id @default(cuid())
   name      String
   code      String   @unique
   apiKey    String?  @map("api_key")
+  isActive   Boolean  @default(true) @map("is_active")
+  // default は true。新規登録時は register API で明示的に false を入れる。
+  // これで「既存組織のデフォルトロックアウト」を防ぐ。
+  isApproved Boolean  @default(true) @map("is_approved")
+  plan       String   @default("free") @map("plan")
+  note       String?  @map("note")
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
@@ -21,6 +35,8 @@ model Organization {
   journalEntries JournalEntry[]
   exportLogs     ExportLog[]
   auditLogs      AuditLog[]
+  portalTokens   ClientPortalToken[]
+  knowledgeFiles KnowledgeFile[]
 
   @@map("organizations")
 }
@@ -46,6 +62,8 @@ model User {
   journalEntries JournalEntry[]
   exportLogs    ExportLog[]
   auditLogs     AuditLog[]
+  portalTokens  ClientPortalToken[]
+  knowledgeFiles KnowledgeFile[]
 
   @@map("users")
 }
@@ -75,6 +93,8 @@ model Client {
   receipts        Receipt[]
   journalEntries  JournalEntry[]
   exportLogs      ExportLog[]
+  portalTokens    ClientPortalToken[]
+  knowledgeFiles  KnowledgeFile[]
 
   @@unique([code, userId], name: "client_code_user")
   @@unique([code, organizationId], name: "client_code_org")
@@ -92,12 +112,20 @@ enum TaxType {
   EXEMPT
 }
 
+/// アップロード書類の種類（OCRプロンプト切替）
+enum DocumentKind {
+  RECEIPT
+  INVOICE
+  OFFICIAL_RECEIPT
+}
+
 model Receipt {
   id          String        @id @default(cuid())
   imagePath   String        @map("image_path")
   imageData   String?       @map("image_data")
   imageMime   String?       @map("image_mime")
   ocrRaw      String?       @map("ocr_raw")
+  documentKind DocumentKind @default(RECEIPT) @map("document_kind")
   status      ReceiptStatus @default(PENDING)
   uploadedAt  DateTime      @default(now()) @map("uploaded_at")
   clientId    String        @map("client_id")
@@ -192,4 +220,41 @@ model AuditLog {
   organization Organization? @relation(fields: [organizationId], references: [id])
 
   @@map("audit_logs")
+}
+
+model ClientPortalToken {
+  id             String    @id @default(cuid())
+  token          String    @unique
+  clientId       String    @map("client_id")
+  userId         String    @map("user_id")
+  organizationId String?   @map("organization_id")
+  label          String?
+  expiresAt      DateTime? @map("expires_at")
+  isActive       Boolean   @default(true) @map("is_active")
+  lastAccessedAt DateTime? @map("last_accessed_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  client       Client        @relation(fields: [clientId], references: [id])
+  user         User          @relation(fields: [userId], references: [id])
+  organization Organization? @relation(fields: [organizationId], references: [id])
+
+  @@map("client_portal_tokens")
+}
+
+model KnowledgeFile {
+  id             String   @id @default(cuid())
+  name           String
+  mimeType       String   @map("mime_type")
+  extractedText  String   @map("extracted_text")
+  fileSize       Int      @map("file_size")
+  userId         String   @map("user_id")
+  organizationId String?  @map("organization_id")
+  clientId       String?  @map("client_id")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  user         User          @relation(fields: [userId], references: [id])
+  organization Organization? @relation(fields: [organizationId], references: [id])
+  client       Client?       @relation(fields: [clientId], references: [id])
+
+  @@map("knowledge_files")
 }
