@@ -43,3 +43,8 @@ next-env.d.ts
 /src/generated/prisma
 prisma/dev.db
 uploads/
+
+# accidental codex/cli output logs (e.g. paths with stripped backslashes)
+C:Users*
+*-review-*.txt
+codex-test*

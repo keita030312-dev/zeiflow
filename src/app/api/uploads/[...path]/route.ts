@@ -1,23 +1,24 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { requireAuth } from "@/lib/auth-middleware";
+import { requireAuth, getScope } from "@/lib/auth-middleware";
 
 export async function GET(req: NextRequest) {
-  const auth = requireAuth(req);
+  const auth = await requireAuth(req);
   if (auth instanceof NextResponse) return auth;
 
   const receiptId = req.nextUrl.searchParams.get("id");
   if (!receiptId) {
-    return NextResponse.json({ error: "ID required" }, { status: 400 });
+    return NextResponse.json({ error: "IDが必要です" }, { status: 400 });
   }
 
+  const scope = getScope(auth);
   const receipt = await prisma.receipt.findFirst({
-    where: { id: receiptId, userId: auth.id },
+    where: { id: receiptId, ...scope },
     select: { imageData: true, imageMime: true },
   });
 
   if (!receipt?.imageData) {
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
+    return NextResponse.json({ error: "見つかりません" }, { status: 404 });
   }
 
   const buffer = Buffer.from(receipt.imageData, "base64");

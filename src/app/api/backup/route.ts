@@ -4,7 +4,7 @@ import { requireAuth, getScope } from "@/lib/auth-middleware";
 
 export async function GET(req: NextRequest) {
   try {
-    const auth = requireAuth(req);
+    const auth = await requireAuth(req);
     if (auth instanceof NextResponse) return auth;
 
     const scope = getScope(auth);

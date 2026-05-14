@@ -1,4 +1,5 @@
 "use client";
+/* eslint-disable @next/next/no-img-element */
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import {
@@ -26,6 +27,7 @@ import {
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
+import { compressImage } from "@/lib/image-compress";
 
 const ACCOUNTS = [
   "現金", "当座預金", "普通預金", "売掛金", "商品", "前払費用", "建物", "車両運搬具", "備品",
@@ -49,6 +51,20 @@ interface ReceiptResult {
     total: number;
     items: { name: string; amount: number }[];
     invoiceNumber?: string;
+    dueDate?: string | null;
+    documentNo?: string | null;
+    purpose?: string | null;
+    fieldConfidence?: {
+      storeName?: number;
+      date?: number;
+      total?: number;
+      taxTotal?: number;
+      invoiceNumber?: number;
+      paymentMethod?: number;
+      dueDate?: number;
+      documentNo?: number;
+      purpose?: number;
+    };
   };
   classification: {
     debitAccount: string;
@@ -62,12 +78,33 @@ interface ReceiptResult {
   };
 }
 
+// 信頼度バッジ: 高(緑) / 中(黄) / 低(赤) を1行で表示
+function ConfidenceBadge({ value }: { value?: number }) {
+  if (value === undefined || value === null) return null;
+  const pct = Math.round(value * 100);
+  let cls = "bg-emerald-500/15 text-emerald-300 border-emerald-500/30";
+  let label = `確実 ${pct}%`;
+  if (value < 0.5) {
+    cls = "bg-rose-500/15 text-rose-300 border-rose-500/30";
+    label = `要確認 ${pct}%`;
+  } else if (value < 0.85) {
+    cls = "bg-amber-500/15 text-amber-300 border-amber-500/30";
+    label = `中 ${pct}%`;
+  }
+  return (
+    <span className={`ml-2 inline-flex items-center rounded border px-1.5 py-0.5 text-[10px] font-medium ${cls}`}>
+      {label}
+    </span>
+  );
+}
+
 interface ReceiptRecord {
   id: string;
   imagePath: string;
   imageMime: string | null;
   status: string;
   ocrRaw: string | null;
+  documentKind?: "RECEIPT" | "INVOICE" | "OFFICIAL_RECEIPT";
   uploadedAt: string;
   client: { name: string; code: string };
   journalEntries: {
@@ -84,9 +121,15 @@ interface ReceiptRecord {
   }[];
 }
 
+const MAX_UPLOAD_BYTES = 10 * 1024 * 1024; // 10MB
+const ALLOWED_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
+
 export default function ReceiptsPage() {
   const [clients, setClients] = useState<Client[]>([]);
   const [selectedClient, setSelectedClient] = useState("");
+  const [uploadDocumentKind, setUploadDocumentKind] = useState<
+    "RECEIPT" | "INVOICE" | "OFFICIAL_RECEIPT"
+  >("RECEIPT");
   const [preview, setPreview] = useState<string | null>(null);
   const [files, setFiles] = useState<File[]>([]);
   const [processing, setProcessing] = useState(false);
@@ -103,6 +146,14 @@ export default function ReceiptsPage() {
   // Receipt history state
   const [receipts, setReceipts] = useState<ReceiptRecord[]>([]);
   const [loadingReceipts, setLoadingReceipts] = useState(true);
+
+  // Bulk select state
+  const [selectedReceipts, setSelectedReceipts] = useState<Set<string>>(new Set());
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+
+  // Filter state
+  const [filterClient, setFilterClient] = useState("");
+  const [filterMonth, setFilterMonth] = useState("");
 
   // Lightbox state
   const [lightboxImage, setLightboxImage] = useState<string | null>(null);
@@ -134,16 +185,19 @@ export default function ReceiptsPage() {
   const fetchReceipts = useCallback(async () => {
     setLoadingReceipts(true);
     try {
-      const res = await fetch("/api/receipts");
+      const params = new URLSearchParams();
+      if (filterClient) params.set("clientId", filterClient);
+      if (filterMonth) params.set("month", filterMonth);
+      const res = await fetch(`/api/receipts?${params}`);
       if (res.ok) {
         setReceipts(await res.json());
       }
     } catch {
-      // silent
+      toast.error("レシート履歴の取得に失敗しました");
     } finally {
       setLoadingReceipts(false);
     }
-  }, []);
+  }, [filterClient, filterMonth]);
 
   useEffect(() => {
     fetch("/api/clients")
@@ -156,6 +210,18 @@ export default function ReceiptsPage() {
     fetchReceipts();
   }, [fetchReceipts]);
 
+  // アップロード中にブラウザを閉じようとしたら警告
+  useEffect(() => {
+    function handleBeforeUnload(e: BeforeUnloadEvent) {
+      if (processing) {
+        e.preventDefault();
+        e.returnValue = "レシートを処理中です。ページを離れると処理が中断されます。";
+      }
+    }
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [processing]);
+
   useEffect(() => {
     return () => {
       if (streamRef.current) {
@@ -163,22 +229,6 @@ export default function ReceiptsPage() {
       }
     };
   }, []);
-
-  async function startCamera() {
-    setUseCamera(true);
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "environment", width: 1920, height: 1080 },
-      });
-      streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-      }
-    } catch {
-      toast.error("カメラにアクセスできません");
-      setUseCamera(false);
-    }
-  }
 
   function stopCamera() {
     if (streamRef.current) {
@@ -203,8 +253,8 @@ export default function ReceiptsPage() {
           const f = new File([blob], `receipt-${Date.now()}.jpg`, {
             type: "image/jpeg",
           });
-          setFiles([f]);
-          setPreview(URL.createObjectURL(f));
+          setFiles((prev) => [...prev, f].slice(0, 5));
+          setPreview(null);
           stopCamera();
         }
       },
@@ -216,72 +266,42 @@ export default function ReceiptsPage() {
   function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
     const selected = e.target.files;
     if (!selected || selected.length === 0) return;
-    const fileList = Array.from(selected);
-    setFiles(fileList);
-    if (fileList.length === 1) {
-      setPreview(URL.createObjectURL(fileList[0]));
+    const newFiles = Array.from(selected).filter((file) => {
+      if (!ALLOWED_IMAGE_TYPES.has(file.type)) {
+        toast.error(`${file.name}: 対応外の形式です（JPG/PNG/WEBP/GIFのみ）`);
+        return false;
+      }
+      if (file.size > MAX_UPLOAD_BYTES) {
+        toast.error(`${file.name}: 10MB以下の画像を選択してください`);
+        return false;
+      }
+      return true;
+    });
+    if (newFiles.length === 0) {
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      return;
+    }
+    const combined = [...files, ...newFiles].slice(0, 5); // 最大5枚
+    if (files.length + newFiles.length > 5) {
+      toast.error("アップロードは最大5枚までです");
+    }
+    setFiles(combined);
+    if (combined.length === 1) {
+      setPreview(URL.createObjectURL(combined[0]));
     } else {
       setPreview(null);
     }
+    if (fileInputRef.current) fileInputRef.current.value = "";
     setResult(null);
   }
 
-  async function compressImage(file: File): Promise<File> {
-    return new Promise((resolve) => {
-      const img = new Image();
-      img.onload = () => {
-        const canvas = document.createElement("canvas");
-        const maxWidth = 800;
-        let w = img.width;
-        let h = img.height;
-        if (w > maxWidth) {
-          h = Math.round((h * maxWidth) / w);
-          w = maxWidth;
-        }
-        canvas.width = w;
-        canvas.height = h;
-        const ctx = canvas.getContext("2d")!;
-
-        // 白背景
-        ctx.fillStyle = "#fff";
-        ctx.fillRect(0, 0, w, h);
-        ctx.drawImage(img, 0, 0, w, h);
-
-        // コントラスト強調 + シャープ化
-        const imageData = ctx.getImageData(0, 0, w, h);
-        const d = imageData.data;
-        for (let i = 0; i < d.length; i += 4) {
-          // グレースケール
-          const gray = d[i] * 0.299 + d[i+1] * 0.587 + d[i+2] * 0.114;
-          // コントラスト強調 (1.4倍)
-          const v = Math.min(255, Math.max(0, ((gray - 128) * 1.4) + 128));
-          d[i] = d[i+1] = d[i+2] = v;
-        }
-        ctx.putImageData(imageData, 0, 0);
-
-        canvas.toBlob(
-          (blob) => {
-            if (blob) {
-              resolve(new File([blob], file.name, { type: "image/jpeg" }));
-            } else {
-              resolve(file);
-            }
-          },
-          "image/jpeg",
-          0.8
-        );
-      };
-      img.onerror = () => resolve(file);
-      img.src = URL.createObjectURL(file);
-    });
-  }
-
-  async function uploadSingleFile(file: File, quality: "fast" | "accurate" = "fast"): Promise<ReceiptResult | null> {
+  async function uploadSingleFile(file: File, quality: "fast" | "accurate" | "ultra" = "fast"): Promise<ReceiptResult | null> {
     const compressed = await compressImage(file);
     const formData = new FormData();
     formData.append("file", compressed);
     formData.append("clientId", selectedClient);
     formData.append("quality", quality);
+    formData.append("documentKind", uploadDocumentKind);
 
     const res = await fetch("/api/receipts", {
       method: "POST",
@@ -295,9 +315,9 @@ export default function ReceiptsPage() {
     }
   }
 
-  const [uploadQuality, setUploadQuality] = useState<"fast" | "accurate">("fast");
+  const [uploadQuality, setUploadQuality] = useState<"fast" | "accurate" | "ultra">("accurate");
 
-  async function handleUpload(quality?: "fast" | "accurate") {
+  async function handleUpload(quality?: "fast" | "accurate" | "ultra") {
     const q = quality || uploadQuality;
     if (files.length === 0 || !selectedClient) {
       toast.error("顧客とファイルを選択してください");
@@ -321,19 +341,29 @@ export default function ReceiptsPage() {
         setProcessing(false);
       }
     } else {
-      // Multiple file upload - sequential
-      let successCount = 0;
-      let lastResult: ReceiptResult | null = null;
+      // Multiple file upload - 2枚ずつ並列処理（精度とスピードのバランス）
       setUploadProgress({ current: 0, total: files.length });
+      const allResults: PromiseSettledResult<ReceiptResult | null>[] = [];
+      const BATCH_SIZE = 2;
 
-      for (let i = 0; i < files.length; i++) {
-        setUploadProgress({ current: i + 1, total: files.length });
-        try {
-          lastResult = await uploadSingleFile(files[i], q);
-          successCount++;
-        } catch {
-          toast.error(`${files[i].name} の読み取りに失敗しました`);
-        }
+      for (let batch = 0; batch < files.length; batch += BATCH_SIZE) {
+        const batchFiles = files.slice(batch, batch + BATCH_SIZE);
+        const batchResults = await Promise.allSettled(
+          batchFiles.map(async (file) => {
+            return await uploadSingleFile(file, q);
+          })
+        );
+        allResults.push(...batchResults);
+        setUploadProgress({ current: Math.min(batch + BATCH_SIZE, files.length), total: files.length });
+      }
+
+      const successResults = allResults.filter((r) => r.status === "fulfilled");
+      const failedResults = allResults.filter((r) => r.status === "rejected");
+      const successCount = successResults.length;
+      const lastResult = successCount > 0 ? (successResults[successCount - 1] as PromiseFulfilledResult<ReceiptResult | null>).value : null;
+
+      if (failedResults.length > 0) {
+        toast.error(`${failedResults.length}件の読み取りに失敗しました`);
       }
 
       setUploadProgress(null);
@@ -355,6 +385,53 @@ export default function ReceiptsPage() {
     setResult(null);
     setUploadProgress(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
+  }
+
+  function toggleReceiptSelect(id: string) {
+    setSelectedReceipts((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function selectAllReceipts() {
+    setSelectedReceipts(new Set(receipts.map((r) => r.id)));
+  }
+
+  function deselectAllReceipts() {
+    setSelectedReceipts(new Set());
+  }
+
+  async function bulkDeleteReceipts() {
+    if (selectedReceipts.size === 0) return;
+    if (!confirm(`${selectedReceipts.size}件のレシート画像を削除しますか？\n仕訳データは残ります。`)) return;
+
+    setBulkDeleting(true);
+    let deleted = 0;
+    let failed = 0;
+    for (const id of selectedReceipts) {
+      try {
+        const res = await fetch(`/api/receipts?id=${id}`, { method: "DELETE" });
+        if (res.ok) deleted++;
+        else failed++;
+      } catch { failed++; }
+    }
+    if (failed > 0) {
+      toast.error(`${deleted}件削除、${failed}件失敗しました`);
+    } else {
+      toast.success(`${deleted}件のレシートを削除しました`);
+    }
+    setSelectedReceipts(new Set());
+    setBulkDeleting(false);
+    fetchReceipts();
+  }
+
+  function documentKindLabel(kind?: string) {
+    if (kind === "INVOICE") return "請求書";
+    if (kind === "OFFICIAL_RECEIPT") return "領収書";
+    return "レシート";
   }
 
   function getStatusBadge(status: string) {
@@ -490,7 +567,7 @@ export default function ReceiptsPage() {
           レシート撮影・読み取り
         </h1>
         <p className="text-sm text-[#94A3B8] mt-1">
-          レシートを撮影またはアップロードしてAIが自動仕分けします
+          レシート・請求書・領収書の画像を撮影またはアップロードしてAIが自動仕分けします
         </p>
       </div>
 
@@ -512,7 +589,9 @@ export default function ReceiptsPage() {
                   onValueChange={(v) => v && setSelectedClient(v)}
                 >
                   <SelectTrigger className="bg-[rgba(15,23,42,0.5)] border-[rgba(212,175,55,0.12)] text-[#F1F5F9]">
-                    <SelectValue placeholder="顧客を選択..." />
+                    <SelectValue placeholder="顧客を選択...">
+                      {clients.find((c) => c.id === selectedClient)?.name || "顧客を選択..."}
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectContent className="bg-[#1E293B] border-[rgba(212,175,55,0.15)]">
                     {clients.map((c) => (
@@ -522,6 +601,30 @@ export default function ReceiptsPage() {
                     ))}
                   </SelectContent>
                 </Select>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm text-[#94A3B8]">書類の種類</label>
+                <Select
+                  value={uploadDocumentKind}
+                  onValueChange={(v) => {
+                    if (v === "RECEIPT" || v === "INVOICE" || v === "OFFICIAL_RECEIPT") {
+                      setUploadDocumentKind(v);
+                    }
+                  }}
+                >
+                  <SelectTrigger className="bg-[rgba(15,23,42,0.5)] border-[rgba(212,175,55,0.12)] text-[#F1F5F9]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="bg-[#1E293B] border-[rgba(212,175,55,0.15)]">
+                    <SelectItem value="RECEIPT">レシート・小票</SelectItem>
+                    <SelectItem value="INVOICE">請求書</SelectItem>
+                    <SelectItem value="OFFICIAL_RECEIPT">領収書</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-[10px] text-[#64748B] leading-relaxed">
+                  OCRの読み取りルールが切り替わります。請求書は支払期限・請求番号、領収書は但し書きを重視します。
+                </p>
               </div>
 
               {/* Camera / Upload */}
@@ -625,15 +728,71 @@ export default function ReceiptsPage() {
                 </div>
               )}
 
-              {/* Upload Button */}
+              {/* Selected Files Preview */}
               {files.length > 0 && !processing && !result && (
-                <Button
-                  onClick={() => handleUpload("accurate")}
-                  className="w-full bg-gradient-to-r from-[#D4AF37] to-[#B8962E] text-[#0F172A] font-semibold"
-                >
-                  <Upload className="h-4 w-4 mr-2" />
-                  {files.length > 1 ? `${files.length}件を読み取り` : "AI読み取り開始"}
-                </Button>
+                <div className="space-y-3">
+                  <p className="text-xs text-[#94A3B8]">{files.length}/5 枚選択中</p>
+                  <div className="flex gap-2 flex-wrap">
+                    {files.map((f, i) => (
+                      <div key={i} className="relative group">
+                        <img
+                          src={URL.createObjectURL(f)}
+                          alt={`レシート ${i + 1}`}
+                          className="w-16 h-20 object-cover rounded-lg border border-[rgba(212,175,55,0.1)]"
+                        />
+                        <button
+                          onClick={() => setFiles((prev) => prev.filter((_, j) => j !== i))}
+                          className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-red-500 text-white flex items-center justify-center text-[10px] opacity-0 group-hover:opacity-100 transition-opacity"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    ))}
+                    {files.length < 5 && (
+                      <label className="w-16 h-20 rounded-lg border-2 border-dashed border-[rgba(212,175,55,0.15)] flex flex-col items-center justify-center cursor-pointer hover:border-[rgba(212,175,55,0.3)] transition-colors">
+                        <span className="text-[#D4AF37] text-lg">+</span>
+                        <span className="text-[9px] text-[#64748B]">追加</span>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          capture="environment"
+                          className="hidden"
+                          onChange={handleFileSelect}
+                        />
+                      </label>
+                    )}
+                  </div>
+                  {/* 精度モード選択 */}
+                  <div className="flex gap-2">
+                    {([
+                      { v: "fast", label: "高速", desc: "Sonnet 4.6 / 数秒" },
+                      { v: "accurate", label: "高精度", desc: "Opus 4.7 / 検証付き" },
+                      { v: "ultra", label: "Ultra", desc: "Opus 4.7 ×3 多数決" },
+                    ] as const).map(({ v, label, desc }) => (
+                      <button
+                        key={v}
+                        type="button"
+                        onClick={() => setUploadQuality(v)}
+                        className={`flex-1 rounded-md border px-2 py-1.5 text-xs transition-colors ${
+                          uploadQuality === v
+                            ? "border-[#D4AF37] bg-[rgba(212,175,55,0.15)] text-[#D4AF37]"
+                            : "border-[rgba(212,175,55,0.1)] text-[#94A3B8] hover:border-[rgba(212,175,55,0.3)]"
+                        }`}
+                        title={desc}
+                      >
+                        <div className="font-medium">{label}</div>
+                        <div className="text-[9px] mt-0.5 opacity-70">{desc}</div>
+                      </button>
+                    ))}
+                  </div>
+                  <Button
+                    onClick={() => handleUpload(uploadQuality)}
+                    className="w-full bg-gradient-to-r from-[#D4AF37] to-[#B8962E] text-[#0F172A] font-semibold"
+                  >
+                    <Upload className="h-4 w-4 mr-2" />
+                    {files.length > 1 ? `${files.length}件を読み取り` : "AI読み取り開始"}
+                  </Button>
+                </div>
               )}
 
               {processing && (
@@ -680,28 +839,59 @@ export default function ReceiptsPage() {
                       </div>
 
                       <div className="rounded-lg bg-[rgba(15,23,42,0.4)] p-4 space-y-2">
-                        <div className="flex justify-between text-sm">
+                        <div className="flex justify-between items-center text-sm">
                           <span className="text-[#94A3B8]">店舗名</span>
-                          <span className="text-[#F1F5F9]">
+                          <span className="text-[#F1F5F9] flex items-center">
                             {result.ocr.storeName}
+                            <ConfidenceBadge value={result.ocr.fieldConfidence?.storeName} />
                           </span>
                         </div>
-                        <div className="flex justify-between text-sm">
+                        <div className="flex justify-between items-center text-sm">
                           <span className="text-[#94A3B8]">日付</span>
-                          <span className="text-[#F1F5F9]">
+                          <span className="text-[#F1F5F9] flex items-center">
                             {result.ocr.date}
+                            <ConfidenceBadge value={result.ocr.fieldConfidence?.date} />
                           </span>
                         </div>
-                        <div className="flex justify-between text-sm">
+                        {result.ocr.dueDate ? (
+                          <div className="flex justify-between items-center text-sm">
+                            <span className="text-[#94A3B8]">支払期限</span>
+                            <span className="text-[#F1F5F9] flex items-center">
+                              {result.ocr.dueDate}
+                              <ConfidenceBadge value={result.ocr.fieldConfidence?.dueDate} />
+                            </span>
+                          </div>
+                        ) : null}
+                        {result.ocr.documentNo ? (
+                          <div className="flex justify-between items-center text-sm">
+                            <span className="text-[#94A3B8]">請求書番号</span>
+                            <span className="text-[#F1F5F9] font-[var(--font-inter)] flex items-center">
+                              {result.ocr.documentNo}
+                              <ConfidenceBadge value={result.ocr.fieldConfidence?.documentNo} />
+                            </span>
+                          </div>
+                        ) : null}
+                        {result.ocr.purpose ? (
+                          <div className="flex justify-between items-center text-sm">
+                            <span className="text-[#94A3B8]">但し書き</span>
+                            <span className="text-[#F1F5F9] flex items-center text-right max-w-[65%]">
+                              {result.ocr.purpose}
+                              <ConfidenceBadge value={result.ocr.fieldConfidence?.purpose} />
+                            </span>
+                          </div>
+                        ) : null}
+                        <div className="flex justify-between items-center text-sm">
                           <span className="text-[#94A3B8]">合計金額</span>
-                          <span className="text-[#F1F5F9] font-semibold font-[var(--font-inter)]">
+                          <span className="text-[#F1F5F9] font-semibold font-[var(--font-inter)] flex items-center">
                             ¥{result.ocr.total.toLocaleString()}
+                            <ConfidenceBadge value={result.ocr.fieldConfidence?.total} />
                           </span>
                         </div>
-                        <div className="flex justify-between text-sm">
+                        <div className="flex justify-between items-center text-sm">
                           <span className="text-[#94A3B8]">登録番号</span>
-                          <span className={result.ocr.invoiceNumber ? "text-[#F1F5F9] font-[var(--font-inter)]" : "text-[#64748B]"}>
+                          <span className={`flex items-center ${result.ocr.invoiceNumber ? "text-[#F1F5F9] font-[var(--font-inter)]" : "text-[#64748B]"}`}>
                             {result.ocr.invoiceNumber || "なし"}
+                            <ConfidenceBadge value={result.ocr.fieldConfidence?.invoiceNumber} />
                           </span>
                         </div>
                       </div>
@@ -861,9 +1051,59 @@ export default function ReceiptsPage() {
       <div className="mt-8">
         <Card className="glass-card border-[rgba(212,175,55,0.08)]">
           <CardHeader>
-            <CardTitle className="text-base text-[#F1F5F9]">
-              レシート履歴
-            </CardTitle>
+            <div className="flex flex-col gap-3">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-base text-[#F1F5F9]">
+                  レシート履歴
+                </CardTitle>
+              </div>
+              {/* フィルタ */}
+              <div className="flex flex-wrap gap-2">
+                <select
+                  value={filterClient}
+                  onChange={(e) => setFilterClient(e.target.value)}
+                  className="bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.12)] text-[#F1F5F9] text-xs rounded-lg px-2 py-1.5"
+                >
+                  <option value="">全顧客</option>
+                  {clients.map((c) => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+                <input
+                  type="month"
+                  value={filterMonth}
+                  onChange={(e) => setFilterMonth(e.target.value)}
+                  className="bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.12)] text-[#F1F5F9] text-xs rounded-lg px-2 py-1.5"
+                />
+                {(filterClient || filterMonth) && (
+                  <button
+                    onClick={() => { setFilterClient(""); setFilterMonth(""); }}
+                    className="text-xs text-[#94A3B8] hover:text-[#D4AF37] px-2"
+                  >
+                    クリア
+                  </button>
+                )}
+              </div>
+              {receipts.length > 0 && (
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={selectedReceipts.size === receipts.length ? deselectAllReceipts : selectAllReceipts}
+                    className="text-xs text-[#94A3B8] hover:text-[#D4AF37] transition-colors"
+                  >
+                    {selectedReceipts.size === receipts.length ? "選択解除" : "全選択"}
+                  </button>
+                  {selectedReceipts.size > 0 && (
+                    <button
+                      onClick={bulkDeleteReceipts}
+                      disabled={bulkDeleting}
+                      className="px-3 py-1 text-xs font-medium rounded-md bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-colors disabled:opacity-40"
+                    >
+                      {bulkDeleting ? "削除中..." : `${selectedReceipts.size}件を削除`}
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
           </CardHeader>
           <CardContent>
             {loadingReceipts ? (
@@ -878,7 +1118,11 @@ export default function ReceiptsPage() {
                 {receipts.map((receipt) => (
                   <div
                     key={receipt.id}
-                    className="rounded-lg border border-[rgba(212,175,55,0.08)] bg-[rgba(15,23,42,0.3)] overflow-hidden hover:border-[rgba(212,175,55,0.2)] transition-colors"
+                    className={`rounded-lg border overflow-hidden transition-colors ${
+                      selectedReceipts.has(receipt.id)
+                        ? "border-[rgba(212,175,55,0.4)] bg-[rgba(212,175,55,0.04)]"
+                        : "border-[rgba(212,175,55,0.08)] bg-[rgba(15,23,42,0.3)] hover:border-[rgba(212,175,55,0.2)]"
+                    }`}
                   >
                     {/* Thumbnail */}
                     <div
@@ -893,14 +1137,32 @@ export default function ReceiptsPage() {
                       <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center">
                         <Eye className="h-6 w-6 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
                       </div>
+                      {/* Checkbox */}
+                      <button
+                        onClick={(e) => { e.stopPropagation(); toggleReceiptSelect(receipt.id); }}
+                        className={`absolute top-2 left-2 w-5 h-5 rounded border-2 flex items-center justify-center transition-colors z-10 ${
+                          selectedReceipts.has(receipt.id)
+                            ? "bg-[#D4AF37] border-[#D4AF37]"
+                            : "border-white/50 bg-black/30 hover:border-white"
+                        }`}
+                      >
+                        {selectedReceipts.has(receipt.id) && (
+                          <Check className="h-3 w-3 text-[#0F172A]" />
+                        )}
+                      </button>
                     </div>
                     {/* Info */}
                     <div className="p-3 space-y-1.5">
-                      <div className="flex items-center justify-between">
+                      <div className="flex items-center justify-between gap-2 flex-wrap">
                         <span className="text-xs text-[#94A3B8] font-[var(--font-inter)]">
                           {new Date(receipt.uploadedAt).toLocaleDateString("ja-JP")}
                         </span>
-                        {getStatusBadge(receipt.status)}
+                        <div className="flex items-center gap-1 shrink-0">
+                          <Badge variant="outline" className="text-[9px] border-[rgba(212,175,55,0.2)] text-[#94A3B8] font-normal">
+                            {documentKindLabel(receipt.documentKind)}
+                          </Badge>
+                          {getStatusBadge(receipt.status)}
+                        </div>
                       </div>
                       <p className="text-sm text-[#F1F5F9] truncate">
                         {getStoreName(receipt.ocrRaw)}
@@ -919,6 +1181,32 @@ export default function ReceiptsPage() {
                         </div>
                       )}
 
+                      {/* Retry Button for ERROR receipts */}
+                      {(receipt.status === "ERROR" || receipt.status === "PROCESSING") && (
+                        <button
+                          onClick={async (e) => {
+                            e.stopPropagation();
+                            try {
+                              const res = await fetch("/api/receipts/retry", {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({ receiptId: receipt.id }),
+                              });
+                              if (res.ok) {
+                                toast.success("再処理が完了しました");
+                                fetchReceipts();
+                              } else {
+                                const data = await res.json();
+                                toast.error(data.error);
+                              }
+                            } catch { toast.error("再処理に失敗しました"); }
+                          }}
+                          className="w-full mt-1 py-1.5 rounded text-xs bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-colors"
+                        >
+                          再試行
+                        </button>
+                      )}
+
                       {/* Action Buttons */}
                       {receipt.journalEntries?.[0] && (
                         <div className="flex gap-2 pt-1">
@@ -934,10 +1222,31 @@ export default function ReceiptsPage() {
                             className="flex items-center gap-1 text-xs text-[#94A3B8] hover:text-red-400 transition-colors"
                           >
                             <Trash2 className="h-3 w-3" />
-                            削除
+                            仕訳削除
                           </button>
                         </div>
                       )}
+                      {/* レシート削除 */}
+                      <button
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          if (!confirm("このレシート画像を削除しますか？\n仕訳は残ります。")) return;
+                          try {
+                            const res = await fetch(`/api/receipts?id=${receipt.id}`, { method: "DELETE" });
+                            if (res.ok) {
+                              toast.success("レシートを削除しました");
+                              fetchReceipts();
+                            } else {
+                              const data = await res.json();
+                              toast.error(data.error);
+                            }
+                          } catch { toast.error("削除に失敗しました"); }
+                        }}
+                        className="flex items-center gap-1 text-[10px] text-[#64748B] hover:text-red-400 transition-colors mt-1"
+                      >
+                        <Trash2 className="h-2.5 w-2.5" />
+                        レシート削除
+                      </button>
                     </div>
 
                     {/* Inline Edit Form */}

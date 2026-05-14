@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireAuth, getScope } from "@/lib/auth-middleware";
 import { z } from "zod";
+import { reportError } from "@/lib/error-reporter";
 
 const clientSchema = z.object({
   code: z.string().min(1, "顧客コードを入力してください"),
@@ -19,25 +20,30 @@ const clientSchema = z.object({
 });
 
 export async function GET(req: NextRequest) {
-  const auth = requireAuth(req);
+  const auth = await requireAuth(req);
   if (auth instanceof NextResponse) return auth;
 
-  const scope = getScope(auth);
-  const clients = await prisma.client.findMany({
-    where: scope,
-    orderBy: { createdAt: "desc" },
-    include: {
-      _count: {
-        select: { journalEntries: true, receipts: true },
+  try {
+    const scope = getScope(auth);
+    const clients = await prisma.client.findMany({
+      where: scope,
+      orderBy: { createdAt: "desc" },
+      include: {
+        _count: {
+          select: { journalEntries: true, receipts: true },
+        },
       },
-    },
-  });
+    });
 
-  return NextResponse.json(clients);
+    return NextResponse.json(clients);
+  } catch (error) {
+    reportError(error instanceof Error ? error : new Error(String(error)), { source: "clients-get" });
+    return NextResponse.json({ error: "顧客一覧の取得に失敗しました" }, { status: 500 });
+  }
 }
 
 export async function POST(req: NextRequest) {
-  const auth = requireAuth(req);
+  const auth = await requireAuth(req);
   if (auth instanceof NextResponse) return auth;
 
   const body = await req.json();
@@ -90,7 +96,7 @@ const updateSchema = z.object({
 });
 
 export async function PUT(req: NextRequest) {
-  const auth = requireAuth(req);
+  const auth = await requireAuth(req);
   if (auth instanceof NextResponse) return auth;
 
   const body = await req.json();
@@ -142,7 +148,7 @@ export async function PUT(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
-  const auth = requireAuth(req);
+  const auth = await requireAuth(req);
   if (auth instanceof NextResponse) return auth;
 
   const { searchParams } = new URL(req.url);
@@ -155,11 +161,21 @@ export async function DELETE(req: NextRequest) {
   }
 
   // Verify ownership
+  // FK で繋がっている関連は全てここで事前チェックする。漏れると DB レベルの FK エラー
+  // (P2003) で 500 を返してしまい、利用者に何が原因か伝わらない。
   const scope = getScope(auth);
   const existing = await prisma.client.findFirst({
     where: { id, ...scope },
     include: {
-      _count: { select: { journalEntries: true, receipts: true } },
+      _count: {
+        select: {
+          journalEntries: true,
+          receipts: true,
+          exportLogs: true,
+          portalTokens: true,
+          knowledgeFiles: true,
+        },
+      },
     },
   });
   if (!existing) {
@@ -184,6 +200,36 @@ export async function DELETE(req: NextRequest) {
     return NextResponse.json(
       {
         error: `この顧客には${existing._count.receipts}件のレシートがあるため削除できません。先にレシートを削除してください。`,
+      },
+      { status: 400 }
+    );
+  }
+
+  // Check for related export logs
+  if (existing._count.exportLogs > 0) {
+    return NextResponse.json(
+      {
+        error: `この顧客には${existing._count.exportLogs}件のエクスポート履歴があるため削除できません。先にエクスポート履歴を削除してください。`,
+      },
+      { status: 400 }
+    );
+  }
+
+  // Check for related portal tokens
+  if (existing._count.portalTokens > 0) {
+    return NextResponse.json(
+      {
+        error: `この顧客には${existing._count.portalTokens}件のポータルリンクがあるため削除できません。先にポータルリンクを無効化・削除してください。`,
+      },
+      { status: 400 }
+    );
+  }
+
+  // Check for related knowledge files
+  if (existing._count.knowledgeFiles > 0) {
+    return NextResponse.json(
+      {
+        error: `この顧客には${existing._count.knowledgeFiles}件のナレッジファイルがあるため削除できません。先にナレッジファイルを削除してください。`,
       },
       { status: 400 }
     );

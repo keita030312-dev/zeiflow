@@ -1,5 +1,6 @@
 import { Sidebar, MobileHeader } from "@/components/sidebar";
 import { AuthGuard } from "@/components/auth-guard";
+import { BackButton } from "@/components/back-button";
 
 export default function DashboardLayout({
   children,
@@ -18,6 +19,7 @@ export default function DashboardLayout({
 
           {/* Main content — offset by sidebar on desktop, full-width on mobile */}
           <main className="flex-1 md:ml-64">
+            <BackButton />
             <div className="p-4 md:p-8">{children}</div>
           </main>
         </div>

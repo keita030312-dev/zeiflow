@@ -3,6 +3,8 @@ import { compare } from "bcryptjs";
 import { sign } from "jsonwebtoken";
 import { prisma } from "@/lib/db";
 import { cookies } from "next/headers";
+import { checkOrgGate } from "@/lib/auth-org-gate";
+
 export async function POST(req: NextRequest) {
   try {
 
@@ -29,6 +31,12 @@ export async function POST(req: NextRequest) {
         { error: "メールアドレスまたはパスワードが正しくありません" },
         { status: 401 }
       );
+    }
+
+    // 事務所の状態チェック(login-form と共通化、bypass 防止)
+    const gate = await checkOrgGate(user.organizationId);
+    if (!gate.ok) {
+      return NextResponse.json({ error: gate.error }, { status: gate.status });
     }
 
     if (user.totpEnabled && user.totpSecret) {

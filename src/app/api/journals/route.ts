@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireAuth, getScope } from "@/lib/auth-middleware";
+import { recordOcrCorrection } from "@/lib/ai/learning";
 import { z } from "zod";
 
 const journalSchema = z.object({
@@ -20,7 +21,7 @@ const journalSchema = z.object({
 });
 
 export async function GET(req: NextRequest) {
-  const auth = requireAuth(req);
+  const auth = await requireAuth(req);
   if (auth instanceof NextResponse) return auth;
 
   const clientId = req.nextUrl.searchParams.get("clientId");
@@ -64,7 +65,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const auth = requireAuth(req);
+  const auth = await requireAuth(req);
   if (auth instanceof NextResponse) return auth;
 
   const body = await req.json();
@@ -89,7 +90,7 @@ export async function POST(req: NextRequest) {
 }
 
 export async function PUT(req: NextRequest) {
-  const auth = requireAuth(req);
+  const auth = await requireAuth(req);
   if (auth instanceof NextResponse) return auth;
 
   const body = await req.json();
@@ -121,11 +122,59 @@ export async function PUT(req: NextRequest) {
     },
   });
 
+  // 学習ループ: 確定タイミングでスタッフ修正をナレッジに自動反映
+  // (失敗してもメインフローは止めない)
+  if (data.isConfirmed === true && existing.clientId) {
+    recordOcrCorrection({
+      before: {
+        date: existing.date,
+        description: existing.description,
+        debitAccount: existing.debitAccount,
+        creditAccount: existing.creditAccount,
+        amount: existing.amount,
+        taxRate: existing.taxRate,
+        taxAmount: existing.taxAmount,
+        invoiceNumber: existing.invoiceNumber,
+      },
+      after: {
+        date: entry.date,
+        description: entry.description,
+        debitAccount: entry.debitAccount,
+        creditAccount: entry.creditAccount,
+        amount: entry.amount,
+        taxRate: entry.taxRate,
+        taxAmount: entry.taxAmount,
+        invoiceNumber: entry.invoiceNumber,
+      },
+      clientId: existing.clientId,
+      userId: auth.id,
+      organizationId: auth.orgId,
+    }).catch((err) => {
+      console.error("[learning] failed to record correction:", err);
+    });
+  }
+
+  // 確定された場合、レシートを削除（履歴から消去＆容量節約）
+  // 同じレシートに紐づく他の仕訳がすべて確定済みの場合のみレシート本体を削除
+  if (data.isConfirmed === true && entry.receiptId) {
+    const receiptId = entry.receiptId;
+    const remaining = await prisma.journalEntry.count({
+      where: { receiptId, isConfirmed: false },
+    });
+    if (remaining === 0) {
+      await prisma.journalEntry.updateMany({
+        where: { receiptId },
+        data: { receiptId: null },
+      });
+      await prisma.receipt.delete({ where: { id: receiptId } }).catch(() => {});
+    }
+  }
+
   return NextResponse.json(entry);
 }
 
 export async function DELETE(req: NextRequest) {
-  const auth = requireAuth(req);
+  const auth = await requireAuth(req);
   if (auth instanceof NextResponse) return auth;
 
   const id = req.nextUrl.searchParams.get("id");

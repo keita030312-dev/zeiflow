@@ -12,7 +12,14 @@ import {
   Pencil,
   Trash2,
   X,
+  Link2,
+  Copy,
+  Check,
+  ExternalLink,
+  Ban,
+  BarChart3,
 } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -47,7 +54,153 @@ interface Client {
   _count: { journalEntries: number; receipts: number };
 }
 
-const emptyForm = {
+interface PortalToken {
+  id: string;
+  token: string;
+  label: string | null;
+  isActive: boolean;
+  expiresAt: string | null;
+  lastAccessedAt: string | null;
+  createdAt: string;
+  portalUrl?: string;
+}
+
+function ClientForm({
+  formData,
+  setFormData,
+  onSubmit,
+  submitLabel,
+  submitting,
+}: {
+  formData: typeof emptyFormData;
+  setFormData: (f: typeof emptyFormData) => void;
+  onSubmit: (e: React.FormEvent) => void;
+  submitLabel: string;
+  submitting?: boolean;
+}) {
+  return (
+    <form onSubmit={onSubmit} className="space-y-4">
+      <div className="grid grid-cols-2 gap-4">
+        <div className="space-y-2">
+          <Label className="text-[#94A3B8]">顧客コード</Label>
+          <Input
+            value={formData.code}
+            onChange={(e) => setFormData({ ...formData, code: e.target.value })}
+            className="bg-[rgba(15,23,42,0.5)] border-[rgba(212,175,55,0.12)] text-[#F1F5F9]"
+            placeholder="C001"
+            required
+          />
+        </div>
+        <div className="space-y-2">
+          <Label className="text-[#94A3B8]">区分</Label>
+          <Select
+            value={formData.clientType}
+            onValueChange={(v) => v && setFormData({ ...formData, clientType: v })}
+          >
+            <SelectTrigger className="bg-[rgba(15,23,42,0.5)] border-[rgba(212,175,55,0.12)] text-[#F1F5F9]">
+              <SelectValue>{formData.clientType === "CORPORATE" ? "法人" : "個人"}</SelectValue>
+            </SelectTrigger>
+            <SelectContent className="bg-[#1E293B] border-[rgba(212,175,55,0.15)]">
+              <SelectItem value="CORPORATE">法人</SelectItem>
+              <SelectItem value="INDIVIDUAL">個人</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+      <div className="space-y-2">
+        <Label className="text-[#94A3B8]">顧客名</Label>
+        <Input
+          value={formData.name}
+          onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+          className="bg-[rgba(15,23,42,0.5)] border-[rgba(212,175,55,0.12)] text-[#F1F5F9]"
+          placeholder="株式会社サンプル"
+          required
+        />
+      </div>
+      <div className="space-y-2">
+        <Label className="text-[#94A3B8]">フリガナ</Label>
+        <Input
+          value={formData.nameKana}
+          onChange={(e) => setFormData({ ...formData, nameKana: e.target.value })}
+          className="bg-[rgba(15,23,42,0.5)] border-[rgba(212,175,55,0.12)] text-[#F1F5F9]"
+          placeholder="カブシキガイシャサンプル"
+        />
+      </div>
+      <div className="grid grid-cols-2 gap-4">
+        <div className="space-y-2">
+          <Label className="text-[#94A3B8]">決算月</Label>
+          <Select
+            value={String(formData.fiscalYearStart)}
+            onValueChange={(v) => v && setFormData({ ...formData, fiscalYearStart: Number(v) })}
+          >
+            <SelectTrigger className="bg-[rgba(15,23,42,0.5)] border-[rgba(212,175,55,0.12)] text-[#F1F5F9]">
+              <SelectValue>{formData.fiscalYearStart}月</SelectValue>
+            </SelectTrigger>
+            <SelectContent className="bg-[#1E293B] border-[rgba(212,175,55,0.15)]">
+              {Array.from({ length: 12 }, (_, i) => (
+                <SelectItem key={i + 1} value={String(i + 1)}>
+                  {i + 1}月
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-2">
+          <Label className="text-[#94A3B8]">課税区分</Label>
+          <Select
+            value={formData.taxType}
+            onValueChange={(v) => v && setFormData({ ...formData, taxType: v })}
+          >
+            <SelectTrigger className="bg-[rgba(15,23,42,0.5)] border-[rgba(212,175,55,0.12)] text-[#F1F5F9]">
+              <SelectValue>{formData.taxType === "STANDARD" ? "本則課税" : formData.taxType === "SIMPLIFIED" ? "簡易課税" : "免税"}</SelectValue>
+            </SelectTrigger>
+            <SelectContent className="bg-[#1E293B] border-[rgba(212,175,55,0.15)]">
+              <SelectItem value="STANDARD">本則課税</SelectItem>
+              <SelectItem value="SIMPLIFIED">簡易課税</SelectItem>
+              <SelectItem value="EXEMPT">免税</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+      <div className="space-y-2">
+        <Label className="text-[#94A3B8]">インボイス登録番号</Label>
+        <Input
+          value={formData.invoiceRegNumber}
+          onChange={(e) => {
+            const v = e.target.value.toUpperCase();
+            if (v === "" || /^T?\d{0,13}$/.test(v)) {
+              setFormData({ ...formData, invoiceRegNumber: v });
+            }
+          }}
+          className="bg-[rgba(15,23,42,0.5)] border-[rgba(212,175,55,0.12)] text-[#F1F5F9]"
+          placeholder="T1234567890123"
+          maxLength={14}
+        />
+        {formData.invoiceRegNumber && !/^T\d{13}$/.test(formData.invoiceRegNumber) && (
+          <p className="text-[10px] text-amber-400">T + 数字13桁で入力してください</p>
+        )}
+      </div>
+      <div className="space-y-2">
+        <Label className="text-[#94A3B8]">備考</Label>
+        <Input
+          value={formData.notes}
+          onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+          className="bg-[rgba(15,23,42,0.5)] border-[rgba(212,175,55,0.12)] text-[#F1F5F9]"
+          placeholder="メモ"
+        />
+      </div>
+      <Button
+        type="submit"
+        disabled={submitting}
+        className="w-full bg-gradient-to-r from-[#D4AF37] to-[#B8962E] text-[#0F172A] font-semibold disabled:opacity-40"
+      >
+        {submitting ? "処理中..." : submitLabel}
+      </Button>
+    </form>
+  );
+}
+
+const emptyFormData = {
   code: "",
   name: "",
   nameKana: "",
@@ -59,6 +212,7 @@ const emptyForm = {
 };
 
 export default function ClientsPage() {
+  const router = useRouter();
   const [clients, setClients] = useState<Client[]>([]);
   const [search, setSearch] = useState("");
   const [isOpen, setIsOpen] = useState(false);
@@ -68,9 +222,78 @@ export default function ClientsPage() {
   const [deleting, setDeleting] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  const [form, setForm] = useState(emptyForm);
+  const [form, setForm] = useState(emptyFormData);
 
-  const [editForm, setEditForm] = useState(emptyForm);
+  const [editForm, setEditForm] = useState(emptyFormData);
+
+  // Portal token state
+  const [portalClientId, setPortalClientId] = useState<string | null>(null);
+  const [portalTokens, setPortalTokens] = useState<PortalToken[]>([]);
+  const [loadingTokens, setLoadingTokens] = useState(false);
+  const [creatingToken, setCreatingToken] = useState(false);
+  const [copiedTokenId, setCopiedTokenId] = useState<string | null>(null);
+
+  async function fetchPortalTokens(clientId: string) {
+    setLoadingTokens(true);
+    try {
+      const res = await fetch(`/api/portal-tokens?clientId=${clientId}`);
+      if (res.ok) {
+        setPortalTokens(await res.json());
+      }
+    } catch {
+      toast.error("ポータルリンクの取得に失敗しました");
+    } finally {
+      setLoadingTokens(false);
+    }
+  }
+
+  async function createPortalToken(clientId: string) {
+    setCreatingToken(true);
+    try {
+      const res = await fetch("/api/portal-tokens", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clientId }),
+      });
+      if (res.ok) {
+        toast.success("ポータルリンクを作成しました");
+        fetchPortalTokens(clientId);
+      } else {
+        const data = await res.json();
+        toast.error(data.error);
+      }
+    } catch {
+      toast.error("リンクの作成に失敗しました");
+    } finally {
+      setCreatingToken(false);
+    }
+  }
+
+  async function deactivateToken(tokenId: string) {
+    try {
+      const res = await fetch(`/api/portal-tokens?id=${tokenId}`, { method: "DELETE" });
+      if (res.ok) {
+        toast.success("リンクを無効化しました");
+        if (portalClientId) fetchPortalTokens(portalClientId);
+      }
+    } catch {
+      toast.error("無効化に失敗しました");
+    }
+  }
+
+  function copyPortalUrl(token: string) {
+    const url = `${window.location.origin}/portal?token=${token}`;
+    navigator.clipboard.writeText(url).then(() => {
+      setCopiedTokenId(token);
+      toast.success("URLをコピーしました");
+      setTimeout(() => setCopiedTokenId(null), 2000);
+    });
+  }
+
+  function openPortalDialog(clientId: string) {
+    setPortalClientId(clientId);
+    fetchPortalTokens(clientId);
+  }
 
   useEffect(() => {
     fetchClients();
@@ -100,7 +323,7 @@ export default function ClientsPage() {
       if (res.ok) {
         toast.success("顧客を登録しました");
         setIsOpen(false);
-        setForm(emptyForm);
+        setForm(emptyFormData);
         fetchClients();
       } else {
         const data = await res.json();
@@ -127,7 +350,7 @@ export default function ClientsPage() {
 
   function cancelEditing() {
     setEditingId(null);
-    setEditForm(emptyForm);
+    setEditForm(emptyFormData);
   }
 
   async function handleUpdate(e: React.FormEvent) {
@@ -143,7 +366,7 @@ export default function ClientsPage() {
       if (res.ok) {
         toast.success("顧客情報を更新しました");
         setEditingId(null);
-        setEditForm(emptyForm);
+        setEditForm(emptyFormData);
         fetchClients();
       } else {
         const data = await res.json();
@@ -188,131 +411,6 @@ export default function ClientsPage() {
     EXEMPT: "免税",
   };
 
-  function ClientForm({
-    formData,
-    setFormData,
-    onSubmit,
-    submitLabel,
-    submitting,
-  }: {
-    formData: typeof emptyForm;
-    setFormData: (f: typeof emptyForm) => void;
-    onSubmit: (e: React.FormEvent) => void;
-    submitLabel: string;
-    submitting?: boolean;
-  }) {
-    return (
-      <form onSubmit={onSubmit} className="space-y-4">
-        <div className="grid grid-cols-2 gap-4">
-          <div className="space-y-2">
-            <Label className="text-[#94A3B8]">顧客コード</Label>
-            <Input
-              value={formData.code}
-              onChange={(e) => setFormData({ ...formData, code: e.target.value })}
-              className="bg-[rgba(15,23,42,0.5)] border-[rgba(212,175,55,0.12)] text-[#F1F5F9]"
-              placeholder="C001"
-              required
-            />
-          </div>
-          <div className="space-y-2">
-            <Label className="text-[#94A3B8]">区分</Label>
-            <Select
-              value={formData.clientType}
-              onValueChange={(v) => v && setFormData({ ...formData, clientType: v })}
-            >
-              <SelectTrigger className="bg-[rgba(15,23,42,0.5)] border-[rgba(212,175,55,0.12)] text-[#F1F5F9]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent className="bg-[#1E293B] border-[rgba(212,175,55,0.15)]">
-                <SelectItem value="CORPORATE">法人</SelectItem>
-                <SelectItem value="INDIVIDUAL">個人</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
-        <div className="space-y-2">
-          <Label className="text-[#94A3B8]">顧客名</Label>
-          <Input
-            value={formData.name}
-            onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-            className="bg-[rgba(15,23,42,0.5)] border-[rgba(212,175,55,0.12)] text-[#F1F5F9]"
-            placeholder="株式会社サンプル"
-            required
-          />
-        </div>
-        <div className="space-y-2">
-          <Label className="text-[#94A3B8]">フリガナ</Label>
-          <Input
-            value={formData.nameKana}
-            onChange={(e) => setFormData({ ...formData, nameKana: e.target.value })}
-            className="bg-[rgba(15,23,42,0.5)] border-[rgba(212,175,55,0.12)] text-[#F1F5F9]"
-            placeholder="カブシキガイシャサンプル"
-          />
-        </div>
-        <div className="grid grid-cols-2 gap-4">
-          <div className="space-y-2">
-            <Label className="text-[#94A3B8]">決算月</Label>
-            <Select
-              value={String(formData.fiscalYearStart)}
-              onValueChange={(v) => v && setFormData({ ...formData, fiscalYearStart: Number(v) })}
-            >
-              <SelectTrigger className="bg-[rgba(15,23,42,0.5)] border-[rgba(212,175,55,0.12)] text-[#F1F5F9]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent className="bg-[#1E293B] border-[rgba(212,175,55,0.15)]">
-                {Array.from({ length: 12 }, (_, i) => (
-                  <SelectItem key={i + 1} value={String(i + 1)}>
-                    {i + 1}月
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-2">
-            <Label className="text-[#94A3B8]">課税区分</Label>
-            <Select
-              value={formData.taxType}
-              onValueChange={(v) => v && setFormData({ ...formData, taxType: v })}
-            >
-              <SelectTrigger className="bg-[rgba(15,23,42,0.5)] border-[rgba(212,175,55,0.12)] text-[#F1F5F9]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent className="bg-[#1E293B] border-[rgba(212,175,55,0.15)]">
-                <SelectItem value="STANDARD">本則課税</SelectItem>
-                <SelectItem value="SIMPLIFIED">簡易課税</SelectItem>
-                <SelectItem value="EXEMPT">免税</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
-        <div className="space-y-2">
-          <Label className="text-[#94A3B8]">インボイス登録番号</Label>
-          <Input
-            value={formData.invoiceRegNumber}
-            onChange={(e) => setFormData({ ...formData, invoiceRegNumber: e.target.value })}
-            className="bg-[rgba(15,23,42,0.5)] border-[rgba(212,175,55,0.12)] text-[#F1F5F9]"
-            placeholder="T1234567890123"
-          />
-        </div>
-        <div className="space-y-2">
-          <Label className="text-[#94A3B8]">備考</Label>
-          <Input
-            value={formData.notes}
-            onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-            className="bg-[rgba(15,23,42,0.5)] border-[rgba(212,175,55,0.12)] text-[#F1F5F9]"
-            placeholder="メモ"
-          />
-        </div>
-        <Button
-          type="submit"
-          disabled={submitting}
-          className="w-full bg-gradient-to-r from-[#D4AF37] to-[#B8962E] text-[#0F172A] font-semibold disabled:opacity-40"
-        >
-          {submitting ? "処理中..." : submitLabel}
-        </Button>
-      </form>
-    );
-  }
 
   return (
     <div>
@@ -466,6 +564,24 @@ export default function ClientsPage() {
                       {/* Action Buttons */}
                       <div className="flex items-center gap-2 pt-3 border-t border-[rgba(212,175,55,0.06)]">
                         <Button
+                          onClick={() => router.push(`/dashboard/clients/${client.id}`)}
+                          variant="secondary"
+                          size="sm"
+                          className="bg-[rgba(212,175,55,0.08)] text-[#D4AF37] hover:bg-[rgba(212,175,55,0.15)] flex items-center gap-1.5 text-xs"
+                        >
+                          <BarChart3 className="h-3 w-3" />
+                          分析
+                        </Button>
+                        <Button
+                          onClick={() => openPortalDialog(client.id)}
+                          variant="secondary"
+                          size="sm"
+                          className="bg-[rgba(212,175,55,0.08)] text-[#D4AF37] hover:bg-[rgba(212,175,55,0.15)] flex items-center gap-1.5 text-xs"
+                        >
+                          <Link2 className="h-3 w-3" />
+                          ポータル
+                        </Button>
+                        <Button
                           onClick={() => startEditing(client)}
                           variant="secondary"
                           size="sm"
@@ -512,6 +628,88 @@ export default function ClientsPage() {
               </div>
             ))}
         </div>
+      )}
+
+      {/* Portal Token Dialog */}
+      {portalClientId && (
+        <Dialog open={!!portalClientId} onOpenChange={(open) => !open && setPortalClientId(null)}>
+          <DialogContent className="bg-[#1E293B] border-[rgba(212,175,55,0.15)] text-[#F1F5F9] max-w-md">
+            <DialogHeader>
+              <DialogTitle className="text-[#F1F5F9] flex items-center gap-2">
+                <Link2 className="h-4 w-4 text-[#D4AF37]" />
+                ポータルリンク
+              </DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <p className="text-xs text-[#94A3B8]">
+                このリンクを顧客に共有すると、レシートの送信と仕訳の閲覧ができます。ログイン不要で、リンクを知っている人は誰でもアクセスできます。
+              </p>
+
+              {loadingTokens ? (
+                <div className="text-center py-4 text-[#94A3B8] text-sm">読み込み中...</div>
+              ) : portalTokens.length > 0 ? (
+                /* リンクがある場合 — URLコピーを表示 */
+                <div className="space-y-3">
+                  <div className="p-3 rounded-lg bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.1)]">
+                    <div className="flex items-center justify-between mb-3">
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-green-500/10 text-green-400">
+                        有効
+                      </span>
+                      {portalTokens[0].lastAccessedAt && (
+                        <span className="text-[10px] text-[#64748B]">
+                          最終アクセス: {new Date(portalTokens[0].lastAccessedAt).toLocaleString("ja-JP")}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        onClick={() => copyPortalUrl(portalTokens[0].token)}
+                        variant="secondary"
+                        size="sm"
+                        className="bg-[#334155] text-[#F1F5F9] hover:bg-[#475569] flex items-center gap-1.5 text-xs flex-1"
+                      >
+                        {copiedTokenId === portalTokens[0].token ? (
+                          <><Check className="h-3 w-3 text-green-400" /> コピー済</>
+                        ) : (
+                          <><Copy className="h-3 w-3" /> URLをコピー</>
+                        )}
+                      </Button>
+                      <Button
+                        onClick={() => {
+                          const url = `${window.location.origin}/portal?token=${portalTokens[0].token}`;
+                          window.open(url, "_blank");
+                        }}
+                        variant="secondary"
+                        size="sm"
+                        className="bg-[#334155] text-[#F1F5F9] hover:bg-[#475569] text-xs"
+                      >
+                        <ExternalLink className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  </div>
+                  <Button
+                    onClick={() => deactivateToken(portalTokens[0].id)}
+                    variant="secondary"
+                    size="sm"
+                    className="w-full bg-[#334155] text-red-400 hover:bg-red-900/30 flex items-center justify-center gap-1.5 text-xs"
+                  >
+                    <Ban className="h-3 w-3" />
+                    このリンクを無効化
+                  </Button>
+                </div>
+              ) : (
+                /* リンクがない場合 — 作成ボタン */
+                <Button
+                  onClick={() => createPortalToken(portalClientId)}
+                  disabled={creatingToken}
+                  className="w-full bg-gradient-to-r from-[#D4AF37] to-[#B8962E] text-[#0F172A] font-semibold disabled:opacity-40"
+                >
+                  {creatingToken ? "作成中..." : "リンクを作成"}
+                </Button>
+              )}
+            </div>
+          </DialogContent>
+        </Dialog>
       )}
     </div>
   );

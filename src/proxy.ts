@@ -1,19 +1,41 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import { checkRateLimit } from "@/lib/rate-limit";
 
-const publicPaths = ["/", "/login", "/login.html", "/register", "/terms", "/privacy", "/forgot-password", "/reset-password", "/api/auth/login", "/api/auth/register", "/api/auth/login-form", "/api/auth/reset-request", "/api/auth/reset-password", "/api/go/anthropic"];
+const publicPaths = ["/", "/login", "/login.html", "/register", "/terms", "/privacy", "/forgot-password", "/reset-password", "/api/auth/login", "/api/auth/register", "/api/auth/login-form", "/api/auth/reset-request", "/api/auth/reset-password", "/api/go/anthropic", "/portal", "/api/health", "/api/errors", "/superadmin", "/api/superadmin"];
 
 export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
+  // 静的ファイルはスキップ
   if (
-    publicPaths.some((p) => pathname === p) ||
     pathname.startsWith("/_next") ||
     pathname.startsWith("/favicon")
   ) {
     return NextResponse.next();
   }
 
+  // APIへのレート制限（公開パス判定より先に実行）
+  // 過去に publicPaths bypass で /api/auth/login, register, reset-request, /api/portal/* が
+  // rate limit をスキップしてしまい、ブルートフォース・DDoS が可能だった
+  if (pathname.startsWith("/api/")) {
+    const rateLimitResponse = checkRateLimit(request);
+    if (rateLimitResponse) return rateLimitResponse;
+  }
+
+  // 公開パス（認証スキップ。rate limit は上で適用済み）
+  if (
+    publicPaths.some((p) => pathname === p) ||
+    pathname.startsWith("/portal") ||
+    pathname.startsWith("/api/portal/") ||
+    pathname.startsWith("/superadmin") ||
+    pathname.startsWith("/api/superadmin") ||
+    pathname === "/api/maintenance"
+  ) {
+    return NextResponse.next();
+  }
+
+  // 認証チェック
   const token = request.cookies.get("token")?.value;
   if (!token) {
     if (pathname.startsWith("/api/")) {
