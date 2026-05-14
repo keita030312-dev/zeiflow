@@ -82,6 +82,30 @@ export interface OcrResult {
   taxTotal?: number;
   paymentMethod?: string;
   rawText: string;
+  // 項目別信頼度(0.0〜1.0)。スタッフが「どの項目を確認すべきか」判断する材料
+  // - 1.0: 確実(検証OCRで一致 or 規則で正規化済み)
+  // - 0.7〜0.9: 高(モデル自己申告で読み取り成功)
+  // - 0.4〜0.6: 中(印字が不明瞭・部分的に推測)
+  // - 0.0〜0.3: 低(空欄or推測ベース。要目視確認)
+  /** 請求書: 支払期限 */
+  dueDate?: string | null;
+  /** 請求書番号・領収書番号など */
+  documentNo?: string | null;
+  /** 領収書: 但し書き */
+  purpose?: string | null;
+  /** 適格請求書発行事業者の登録番号（T+13桁） */
+  invoiceNumber?: string | null;
+  fieldConfidence?: {
+    storeName?: number;
+    date?: number;
+    total?: number;
+    taxTotal?: number;
+    invoiceNumber?: number;
+    paymentMethod?: number;
+    dueDate?: number;
+    documentNo?: number;
+    purpose?: number;
+  };
 }
 
 export interface ClassificationResult {

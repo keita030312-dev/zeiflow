@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Shield, Eye, EyeOff, Lock, Mail, User } from "lucide-react";
+import { Shield, Eye, EyeOff, Lock, Mail, User, Building2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -10,6 +10,7 @@ import { Card, CardContent } from "@/components/ui/card";
 export default function RegisterPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [name, setName] = useState("");
+  const [officeName, setOfficeName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -31,12 +32,16 @@ export default function RegisterPage() {
       const res = await fetch("/api/auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, email, password, agreedToTerms }),
+        body: JSON.stringify({ name, officeName, email, password, agreedToTerms }),
       });
       const data = await res.json();
 
       if (data.success) {
-        window.location.href = "/login";
+        if (data.pendingApproval) {
+          window.location.href = "/login?error=" + encodeURIComponent("登録が完了しました。管理者の承認後にログインできます。しばらくお待ちください。");
+        } else {
+          window.location.href = "/login";
+        }
       } else {
         setError(data.error || "登録に失敗しました");
       }
@@ -88,6 +93,21 @@ export default function RegisterPage() {
                     onChange={(e) => setName(e.target.value)}
                     className="pl-10 bg-[rgba(15,23,42,0.5)] border-[rgba(212,175,55,0.12)] text-[#F1F5F9] placeholder:text-[#475569] focus:border-[#D4AF37] focus:ring-[#D4AF37]/20"
                     placeholder="山田 太郎"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-[#94A3B8] text-sm">事務所名</Label>
+                <div className="relative">
+                  <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[#64748B]" />
+                  <Input
+                    type="text"
+                    value={officeName}
+                    onChange={(e) => setOfficeName(e.target.value)}
+                    className="pl-10 bg-[rgba(15,23,42,0.5)] border-[rgba(212,175,55,0.12)] text-[#F1F5F9] placeholder:text-[#475569] focus:border-[#D4AF37] focus:ring-[#D4AF37]/20"
+                    placeholder="○○税理士事務所"
                     required
                   />
                 </div>

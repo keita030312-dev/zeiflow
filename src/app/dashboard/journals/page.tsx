@@ -18,7 +18,6 @@ import {
   Loader2,
   Printer,
 } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -439,7 +438,9 @@ export default function JournalsPage() {
         <Select value={selectedClient} onValueChange={(v) => v && setSelectedClient(v)}>
           <SelectTrigger className="w-[200px] bg-[rgba(30,41,59,0.6)] border-[rgba(212,175,55,0.08)] text-[#F1F5F9]">
             <Filter className="h-4 w-4 mr-2 text-[#64748B]" />
-            <SelectValue placeholder="顧客" />
+            <SelectValue placeholder="顧客">
+              {selectedClient === "all" ? "全顧客" : clients.find((c) => c.id === selectedClient)?.name || "顧客"}
+            </SelectValue>
           </SelectTrigger>
           <SelectContent className="bg-[#1E293B] border-[rgba(212,175,55,0.15)]">
             <SelectItem value="all">全顧客</SelectItem>

@@ -8,7 +8,7 @@ const inviteSchema = z.object({
 });
 
 export async function POST(req: NextRequest) {
-  const auth = requireAuth(req);
+  const auth = await requireAuth(req);
   if (auth instanceof NextResponse) return auth;
 
   if (!auth.orgId) {

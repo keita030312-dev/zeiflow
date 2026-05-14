@@ -8,7 +8,7 @@ import type { JournalEntryData, CsvFormat, PeriodType } from "@/types";
 
 export async function POST(req: NextRequest) {
   try {
-    const auth = requireAuth(req);
+    const auth = await requireAuth(req);
     if (auth instanceof NextResponse) return auth;
 
     const body = await req.json();
@@ -77,11 +77,6 @@ export async function POST(req: NextRequest) {
 
     let csv: string;
     let filename: string;
-    const formatLabels: Record<string, string> = {
-      yayoi: "弥生会計",
-      moneyforward: "マネーフォワード",
-      freee: "freee",
-    };
 
     switch (format) {
       case "yayoi":

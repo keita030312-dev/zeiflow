@@ -28,7 +28,11 @@ const sections = [
   { id: "clients", label: "顧客管理", icon: Users },
   { id: "receipts", label: "レシート撮影・読み取り", icon: Camera },
   { id: "journals", label: "仕訳管理", icon: ClipboardList },
-  { id: "csv", label: "CSV出力", icon: FileDown },
+  { id: "csv", label: "CSV出力・PDF帳票", icon: FileDown },
+  { id: "import", label: "CSVインポート", icon: FileDown },
+  { id: "analytics", label: "顧客別分析", icon: ClipboardList },
+  { id: "portal", label: "クライアントポータル", icon: ExternalLink },
+  { id: "knowledge", label: "仕訳ナレッジ・AI学習", icon: BookOpen },
   { id: "team", label: "チーム管理", icon: UsersRound },
   { id: "security", label: "セキュリティ・バックアップ", icon: ShieldCheck },
   { id: "contact", label: "お問い合わせ", icon: Mail },
@@ -238,6 +242,21 @@ export default function HelpPage() {
                 </ol>
               </CardContent>
             </Card>
+
+            <Card className="border-[rgba(212,175,55,0.15)] bg-[#1E293B]">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-[#F1F5F9] text-base">パスワードをお忘れの場合</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ol className="space-y-2">
+                  <Step n={1}>ログイン画面で「パスワードをお忘れの方」をクリック</Step>
+                  <Step n={2}>登録したメールアドレスを入力</Step>
+                  <Step n={3}>届いたメールのリンクをクリック</Step>
+                  <Step n={4}>新しいパスワードを設定</Step>
+                </ol>
+                <Note>リセットリンクの有効期限は1時間です</Note>
+              </CardContent>
+            </Card>
           </div>
         </section>
 
@@ -387,9 +406,13 @@ export default function HelpPage() {
                 </Step>
                 <Step n={5}>読み取り結果を確認し、必要に応じて編集</Step>
               </ol>
-              <Note>複数レシートの一括アップロードにも対応しています</Note>
+              <Note>最大5枚まで追加してから一括アップロードできます（＋ボタンで追加）</Note>
+              <Note>レシート履歴は顧客別・月別にフィルタリングできます</Note>
               <Note>
                 画像は自動圧縮されるため、高解像度の撮影でも問題ありません
+              </Note>
+              <Note>
+                レシート履歴でチェックボックスを使って複数選択 → 一括削除ができます
               </Note>
             </CardContent>
           </Card>
@@ -425,9 +448,9 @@ export default function HelpPage() {
           </Card>
         </section>
 
-        {/* ====== 7. CSV出力 ====== */}
+        {/* ====== 7. CSV出力・PDF帳票 ====== */}
         <section className="mb-10">
-          <SectionHeading id="csv" number={7} title="CSV出力" icon={FileDown} />
+          <SectionHeading id="csv" number={7} title="CSV出力・PDF帳票" icon={FileDown} />
           <Card className="border-[rgba(212,175,55,0.15)] bg-[#1E293B]">
             <CardContent className="pt-6 space-y-4">
               <p className="text-[#CBD5E1]">
@@ -481,37 +504,169 @@ export default function HelpPage() {
               <Note>
                 インボイス登録番号は仕訳メモ/備考欄に自動記載されます
               </Note>
+
+              <h3 className="text-[#F1F5F9] font-semibold mt-6 mb-2">PDF帳票出力</h3>
+              <p className="text-[#CBD5E1]">
+                CSV出力ページの「PDF」ボタンをクリックすると、仕訳帳をPDF形式で出力できます。
+                ブラウザの印刷機能を使って保存します。
+              </p>
             </CardContent>
           </Card>
         </section>
 
-        {/* ====== 8. チーム管理 ====== */}
+        {/* ====== 8. CSVインポート ====== */}
+        <section className="mb-10">
+          <SectionHeading id="import" number={8} title="CSVインポート" icon={FileDown} />
+          <Card className="border-[rgba(212,175,55,0.15)] bg-[#1E293B]">
+            <CardContent className="pt-6 space-y-4">
+              <p className="text-[#CBD5E1]">
+                メニュー →「CSVインポート」で過去の仕訳データを一括登録できます。
+              </p>
+              <h3 className="text-[#F1F5F9] font-semibold mb-2">手順</h3>
+              <ol className="space-y-2">
+                <Step n={1}>顧客を選択</Step>
+                <Step n={2}>CSVファイルを選択してアップロード</Step>
+                <Step n={3}>自動でヘッダーを認識し、仕訳を一括登録</Step>
+              </ol>
+              <h3 className="text-[#F1F5F9] font-semibold mt-4 mb-2">必須カラム</h3>
+              <ul className="space-y-2">
+                <Bullet>日付（YYYY-MM-DD形式）</Bullet>
+                <Bullet>借方科目</Bullet>
+                <Bullet>貸方科目</Bullet>
+                <Bullet>金額</Bullet>
+              </ul>
+              <Note>摘要・税額・登録番号・メモは任意カラムです</Note>
+              <Note>エラー行があってもスキップして正常行だけインポートします</Note>
+            </CardContent>
+          </Card>
+        </section>
+
+        {/* ====== 9. 顧客別分析 ====== */}
+        <section className="mb-10">
+          <SectionHeading id="analytics" number={9} title="顧客別分析" icon={ClipboardList} />
+          <Card className="border-[rgba(212,175,55,0.15)] bg-[#1E293B]">
+            <CardContent className="pt-6 space-y-4">
+              <p className="text-[#CBD5E1]">
+                顧客管理ページの各顧客カードにある「分析」ボタンから、顧客ごとの専用分析ページを開けます。
+              </p>
+              <h3 className="text-[#F1F5F9] font-semibold mb-2">表示内容</h3>
+              <ul className="space-y-2">
+                <Bullet>累計仕訳数・合計金額</Bullet>
+                <Bullet>確定率・未確定仕訳数</Bullet>
+                <Bullet>レシート処理状況（エラー件数含む）</Bullet>
+                <Bullet>インボイス登録率</Bullet>
+                <Bullet>月別仕訳推移グラフ（過去12ヶ月）</Bullet>
+                <Bullet>科目別支出ランキング</Bullet>
+                <Bullet>最近の仕訳一覧（直近10件）</Bullet>
+              </ul>
+            </CardContent>
+          </Card>
+        </section>
+
+        {/* ====== 10. クライアントポータル ====== */}
+        <section className="mb-10">
+          <SectionHeading id="portal" number={10} title="クライアントポータル" icon={ExternalLink} />
+          <div className="space-y-6">
+            <Card className="border-[rgba(212,175,55,0.15)] bg-[#1E293B]">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-[#F1F5F9] text-base">概要</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <p className="text-[#CBD5E1]">
+                  顧問先に専用リンクを発行し、ログイン不要でレシートを送信してもらえる機能です。
+                </p>
+                <ul className="space-y-2">
+                  <Bullet>顧問先はリンクを開くだけ（アカウント不要）</Bullet>
+                  <Bullet>スマートフォンから複数レシートを一括送信</Bullet>
+                  <Bullet>送信されたレシートは自動でAI仕訳</Bullet>
+                  <Bullet>顧問先は自分の仕訳一覧も確認・確定できる</Bullet>
+                  <Bullet>他の顧問先のデータは一切見えない（完全分離）</Bullet>
+                </ul>
+              </CardContent>
+            </Card>
+            <Card className="border-[rgba(212,175,55,0.15)] bg-[#1E293B]">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-[#F1F5F9] text-base">リンクの発行方法</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ol className="space-y-2">
+                  <Step n={1}>顧客管理ページを開く</Step>
+                  <Step n={2}>対象顧客のカードで「ポータル」をクリック</Step>
+                  <Step n={3}>「リンクを作成」をクリック</Step>
+                  <Step n={4}>「URLをコピー」でリンクをコピー</Step>
+                  <Step n={5}>LINE・メール等で顧問先に共有</Step>
+                </ol>
+                <Note>リンクは1顧客につき1つ。期限なしで何人でもアクセス可能です</Note>
+                <Note>不要になったら「無効化」で即座にアクセスを遮断できます</Note>
+              </CardContent>
+            </Card>
+          </div>
+        </section>
+
+        {/* ====== 9. 仕訳ナレッジ ====== */}
+        <section className="mb-10">
+          <SectionHeading id="knowledge" number={11} title="仕訳ナレッジ・AI学習" icon={BookOpen} />
+          <Card className="border-[rgba(212,175,55,0.15)] bg-[#1E293B]">
+            <CardContent className="pt-6 space-y-4">
+              <p className="text-[#CBD5E1]">
+                仕訳帳や経理ルールのPDF・CSVをアップロードすると、AIがそのルールに従って仕訳します。
+              </p>
+              <h3 className="text-[#F1F5F9] font-semibold mb-2">使い方</h3>
+              <ol className="space-y-2">
+                <Step n={1}>メニュー →「仕訳ナレッジ」を開く</Step>
+                <Step n={2}>適用範囲を選択（事務所全体 or 特定の顧問先）</Step>
+                <Step n={3}>PDF・CSV・テキストファイルをアップロード</Step>
+              </ol>
+              <h3 className="text-[#F1F5F9] font-semibold mt-4 mb-2">AIの仕訳優先順位</h3>
+              <ul className="space-y-2">
+                <Bullet>基本ルール（2026年税法準拠のデフォルト仕訳ルール）</Bullet>
+                <Bullet>ナレッジ（アップロードした仕訳帳・ルール）→ 基本より優先</Bullet>
+                <Bullet>学習データ（過去の確定済み仕訳パターン）→ 最優先</Bullet>
+              </ul>
+              <Note>仕訳を確定するたびにAIが自動で学習し、次回から同じパターンで仕訳します</Note>
+              <Note>対応ファイル：PDF、CSV、テキスト</Note>
+
+              <h3 className="text-[#F1F5F9] font-semibold mt-6 mb-2">AI自動学習について</h3>
+              <p className="text-[#CBD5E1]">
+                仕訳を確定すると、AIが「この店舗名ならこの科目」というパターンを自動で記憶します。
+                ナレッジのアップロードは不要で、使えば使うほど事務所独自のルールに最適化されます。
+              </p>
+              <ul className="space-y-2 mt-2">
+                <Bullet>顧問先ごとに直近50件の確定仕訳を参照</Bullet>
+                <Bullet>同じパターンが多いほど優先度が上がる</Bullet>
+                <Bullet>AIが科目を間違えても、修正して確定すれば次回から正しく仕訳</Bullet>
+              </ul>
+
+              <h3 className="text-[#F1F5F9] font-semibold mt-6 mb-2">レシートの再試行</h3>
+              <p className="text-[#CBD5E1]">
+                レシート撮影ページで「エラー」または「処理中」のまま止まったレシートに「再試行」ボタンが表示されます。
+                クリックするとAIが再度読み取りを行います。処理に失敗した場合、レシートは自動的に「エラー」状態に変更されます。
+              </p>
+            </CardContent>
+          </Card>
+        </section>
+
+        {/* ====== 10. チーム管理 ====== */}
         <section className="mb-10">
           <SectionHeading
             id="team"
-            number={8}
+            number={12}
             title="チーム管理"
             icon={UsersRound}
           />
           <Card className="border-[rgba(212,175,55,0.15)] bg-[#1E293B]">
             <CardContent className="pt-6 space-y-4">
               <p className="text-[#CBD5E1]">
-                メニュー → 「チーム管理」で事務所内のチームを作成・管理できます。
+                メニュー → 「チーム管理」で事務所のメンバーを管理できます。新規登録時に事務所は自動で作成されます。
               </p>
               <h3 className="text-[#F1F5F9] font-semibold mb-2">主な機能</h3>
               <ul className="space-y-2">
-                <Bullet>チーム（組織）の作成：チーム名と組織コードを設定</Bullet>
+                <Bullet>チーム情報の確認（チーム名・コード）・チーム名変更</Bullet>
+                <Bullet>メンバー招待：メールアドレスでスタッフを招待</Bullet>
+                <Bullet>ロール管理：管理者（ADMIN）とスタッフ（STAFF）の権限切り替え</Bullet>
+                <Bullet>メンバー削除：管理者が強制退会させることが可能</Bullet>
                 <Bullet>
-                  メンバー招待：メールアドレスでスタッフを招待
-                </Bullet>
-                <Bullet>
-                  ロール管理：管理者（ADMIN）とスタッフ（STAFF）の2つの権限
-                </Bullet>
-                <Bullet>
-                  管理者はメンバーの追加・削除、チーム設定の変更が可能
-                </Bullet>
-                <Bullet>
-                  チーム内でデータ（顧客・仕訳）を共有
+                  事務所内でデータ（顧客・仕訳）を共有
                 </Bullet>
               </ul>
             </CardContent>
@@ -522,7 +677,7 @@ export default function HelpPage() {
         <section className="mb-10">
           <SectionHeading
             id="security"
-            number={9}
+            number={13}
             title="セキュリティ・バックアップ"
             icon={ShieldCheck}
           />
@@ -560,7 +715,7 @@ export default function HelpPage() {
 
         {/* ====== 10. お問い合わせ ====== */}
         <section className="mb-10">
-          <SectionHeading id="contact" number={10} title="お問い合わせ" icon={Mail} />
+          <SectionHeading id="contact" number={14} title="お問い合わせ" icon={Mail} />
           <Card className="border-[rgba(212,175,55,0.15)] bg-[#1E293B]">
             <CardContent className="pt-6 space-y-3">
               <p className="text-[#CBD5E1]">

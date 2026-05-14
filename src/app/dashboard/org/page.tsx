@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 
 interface OrgMember {
   id: string;
@@ -33,7 +33,7 @@ export default function OrgPage() {
 
   const [leaving, setLeaving] = useState(false);
 
-  async function fetchOrg() {
+  const fetchOrg = useCallback(async function() {
     try {
       const res = await fetch("/api/org");
       const data = await res.json();
@@ -43,11 +43,11 @@ export default function OrgPage() {
     } finally {
       setLoading(false);
     }
-  }
+  }, []);
 
   useEffect(() => {
     fetchOrg();
-  }, []);
+  }, [fetchOrg]);
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
@@ -204,9 +204,32 @@ export default function OrgPage() {
                 <h2 className="text-lg font-semibold text-[#F1F5F9]">{org.name}</h2>
                 <p className="text-sm text-[#94A3B8]">コード: {org.code}</p>
               </div>
-              <span className="inline-block px-2 py-1 rounded text-xs font-medium bg-[rgba(212,175,55,0.1)] text-[#D4AF37]">
-                チームモード
-              </span>
+              <div className="flex items-center gap-2">
+                <span className="inline-block px-2 py-1 rounded text-xs font-medium bg-[rgba(212,175,55,0.1)] text-[#D4AF37]">
+                  チームモード
+                </span>
+                <button
+                  onClick={async () => {
+                    const newName = prompt("新しいチーム名:", org.name);
+                    if (!newName || newName === org.name) return;
+                    const res = await fetch("/api/org", {
+                      method: "PUT",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ name: newName }),
+                    });
+                    if (res.ok) {
+                      setSuccess("チーム名を変更しました");
+                      fetchOrg();
+                    } else {
+                      const data = await res.json();
+                      setError(data.error);
+                    }
+                  }}
+                  className="text-xs text-[#94A3B8] hover:text-[#D4AF37] transition-colors"
+                >
+                  名前変更
+                </button>
+              </div>
             </div>
           </div>
 
@@ -220,15 +243,43 @@ export default function OrgPage() {
                     <p className="text-sm font-medium text-[#F1F5F9]">{member.name}</p>
                     <p className="text-xs text-[#94A3B8]">{member.email}</p>
                   </div>
-                  <span
-                    className={`inline-block px-2 py-1 rounded text-xs font-medium ${
-                      member.role === "ADMIN"
-                        ? "bg-[rgba(212,175,55,0.1)] text-[#D4AF37]"
-                        : "bg-[rgba(148,163,184,0.1)] text-[#94A3B8]"
-                    }`}
-                  >
-                    {member.role === "ADMIN" ? "管理者" : "スタッフ"}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={async () => {
+                        const newRole = member.role === "ADMIN" ? "STAFF" : "ADMIN";
+                        if (!confirm(`${member.name}の権限を${newRole === "ADMIN" ? "管理者" : "スタッフ"}に変更しますか？`)) return;
+                        const res = await fetch("/api/org", {
+                          method: "PUT",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ memberId: member.id, role: newRole }),
+                        });
+                        if (res.ok) { setSuccess("権限を変更しました"); fetchOrg(); }
+                        else { const d = await res.json(); setError(d.error); }
+                      }}
+                      className={`px-2 py-1 rounded text-xs font-medium cursor-pointer ${
+                        member.role === "ADMIN"
+                          ? "bg-[rgba(212,175,55,0.1)] text-[#D4AF37]"
+                          : "bg-[rgba(148,163,184,0.1)] text-[#94A3B8]"
+                      }`}
+                    >
+                      {member.role === "ADMIN" ? "管理者" : "スタッフ"}
+                    </button>
+                    <button
+                      onClick={async () => {
+                        if (!confirm(`${member.name}をチームから削除しますか？`)) return;
+                        const res = await fetch("/api/org", {
+                          method: "PUT",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ removeMemberId: member.id }),
+                        });
+                        if (res.ok) { setSuccess("メンバーを削除しました"); fetchOrg(); }
+                        else { const d = await res.json(); setError(d.error); }
+                      }}
+                      className="text-xs text-red-400 hover:text-red-300"
+                    >
+                      削除
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>

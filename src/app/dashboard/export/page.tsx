@@ -13,7 +13,6 @@ import {
 } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 
 interface Client {
@@ -192,7 +191,9 @@ export default function ExportPage() {
                   onValueChange={(v) => v && setSelectedClient(v)}
                 >
                   <SelectTrigger className="bg-[rgba(15,23,42,0.5)] border-[rgba(212,175,55,0.12)] text-[#F1F5F9]">
-                    <SelectValue placeholder="顧客を選択..." />
+                    <SelectValue placeholder="顧客を選択...">
+                      {clients.find((c) => c.id === selectedClient)?.name || "顧客を選択..."}
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectContent className="bg-[#1E293B] border-[rgba(212,175,55,0.15)]">
                     {clients.map((c) => (
@@ -207,7 +208,7 @@ export default function ExportPage() {
               {/* Format */}
               <div className="space-y-3">
                 <Label className="text-[#94A3B8]">出力形式</Label>
-                <div className="grid grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   {formatOptions.map((fmt) => (
                     <button
                       key={fmt.value}
@@ -282,14 +283,31 @@ export default function ExportPage() {
                 </div>
               </div>
 
-              <Button
-                onClick={handleExport}
-                disabled={exporting || !selectedClient || !selectedFormat}
-                className="w-full bg-gradient-to-r from-[#D4AF37] to-[#B8962E] text-[#0F172A] font-semibold hover:from-[#E8D48B] hover:to-[#D4AF37] disabled:opacity-50"
-              >
-                <Download className="h-4 w-4 mr-2" />
-                {exporting ? "エクスポート中..." : "CSVをダウンロード"}
-              </Button>
+              <div className="flex gap-3">
+                <Button
+                  onClick={handleExport}
+                  disabled={exporting || !selectedClient || !selectedFormat}
+                  className="flex-1 bg-gradient-to-r from-[#D4AF37] to-[#B8962E] text-[#0F172A] font-semibold hover:from-[#E8D48B] hover:to-[#D4AF37] disabled:opacity-50"
+                >
+                  <Download className="h-4 w-4 mr-2" />
+                  {exporting ? "エクスポート中..." : "CSVダウンロード"}
+                </Button>
+                <Button
+                  onClick={() => {
+                    if (!selectedClient || !startDate || !endDate) {
+                      toast.error("顧客と期間を選択してください");
+                      return;
+                    }
+                    window.open(`/api/export/pdf?clientId=${selectedClient}&startDate=${startDate}&endDate=${endDate}`, "_blank");
+                  }}
+                  disabled={!selectedClient}
+                  variant="secondary"
+                  className="bg-[#334155] text-[#F1F5F9] hover:bg-[#475569] disabled:opacity-50"
+                >
+                  <FileDown className="h-4 w-4 mr-2" />
+                  PDF
+                </Button>
+              </div>
             </CardContent>
           </Card>
         </div>

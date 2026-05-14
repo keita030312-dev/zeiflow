@@ -1,4 +1,5 @@
 "use client";
+/* eslint-disable @next/next/no-img-element */
 
 import { useState, useEffect } from "react";
 import { Settings, Shield, Key, QrCode, ExternalLink, CheckCircle, AlertTriangle, Download } from "lucide-react";
@@ -8,6 +9,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
+
+const ANTHROPIC_URL = ["https://", "console.anthropic.com", "/settings/keys"].join("");
 
 export default function SettingsPage() {
   const [totpEnabled, setTotpEnabled] = useState(false);
@@ -30,8 +33,6 @@ export default function SettingsPage() {
   const [apiKeyInput, setApiKeyInput] = useState("");
   const [savingKey, setSavingKey] = useState(false);
   const [anthropicQrDataUrl, setAnthropicQrDataUrl] = useState("");
-
-  const ANTHROPIC_URL = ["https://", "console.anthropic.com", "/settings/keys"].join("");
 
   useEffect(() => {
     // Fetch API key status and 2FA status

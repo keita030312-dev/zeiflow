@@ -35,7 +35,7 @@ export default function PrivacyPage() {
           プライバシーポリシー
         </h1>
         <p style={{ color: "#94A3B8", fontSize: 14, marginBottom: 48 }}>
-          最終更新日：2025年1月1日
+          最終更新日：2026年4月11日
         </p>
 
         <Section title="1. 個人情報の定義">
@@ -58,6 +58,14 @@ export default function PrivacyPage() {
             <li style={{ marginTop: 8 }}>
               <strong style={{ color: "#F1F5F9" }}>技術情報：</strong>
               IPアドレス、ブラウザ情報、アクセスログ、利用日時
+            </li>
+            <li style={{ marginTop: 8 }}>
+              <strong style={{ color: "#F1F5F9" }}>ポータル経由のデータ：</strong>
+              クライアントポータルを通じてアップロードされたレシート画像および仕訳データ
+            </li>
+            <li style={{ marginTop: 8 }}>
+              <strong style={{ color: "#F1F5F9" }}>ナレッジデータ：</strong>
+              仕訳ルールとしてアップロードされたPDF・CSV・テキストファイルから抽出されたテキスト
             </li>
             <li style={{ marginTop: 8 }}>
               <strong style={{ color: "#F1F5F9" }}>決済情報：</strong>
@@ -91,7 +99,13 @@ export default function PrivacyPage() {
               人の生命・身体・財産の保護のために必要であり、本人の同意を得ることが困難な場合
             </li>
             <li>
-              業務委託先（サーバー運営、決済代行等）に対し、必要な範囲で提供する場合（委託先には適切な管理を義務付けます）
+              業務委託先に対し、必要な範囲で提供する場合（委託先には適切な管理を義務付けます）。主な委託先は以下の通りです：
+              <ul style={{ paddingLeft: 24, marginTop: 8 }}>
+                <li>Vercel Inc.（サーバー運営・ホスティング）</li>
+                <li>Neon Inc.（データベース運営）</li>
+                <li>Anthropic PBC（AI画像解析・OCR処理）</li>
+                <li>Resend Inc.（パスワードリセット等のメール送信）</li>
+              </ul>
             </li>
           </ul>
         </Section>
@@ -163,6 +177,15 @@ export default function PrivacyPage() {
             </li>
             <li style={{ marginTop: 8 }}>
               当社はAI処理の精度向上のため、匿名化・統計化されたデータを利用する場合があります
+            </li>
+            <li style={{ marginTop: 8 }}>
+              AI学習機能により、利用者が確定した仕訳パターンを各利用者・顧問先ごとに記憶し、次回以降の仕訳精度向上に利用します。学習データは他の利用者と共有されることはありません
+            </li>
+            <li style={{ marginTop: 8 }}>
+              仕訳ナレッジとしてアップロードされたファイルは、テキスト抽出後にAIの仕訳判定に利用されます。原本ファイルは保存されず、抽出されたテキストのみが保管されます
+            </li>
+            <li style={{ marginTop: 8 }}>
+              クライアントポータル経由でアップロードされたデータは、ポータルリンクを発行した利用者のアカウントに紐づいて管理され、同じ権限で取り扱われます
             </li>
           </ul>
         </Section>

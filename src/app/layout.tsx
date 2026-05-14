@@ -43,6 +43,13 @@ export default function RootLayout({
       <body className="min-h-full flex flex-col">
         {children}
         <Toaster richColors position="top-right" />
+        <script dangerouslySetInnerHTML={{ __html: `
+          if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.getRegistrations().then(function(regs) {
+              regs.forEach(function(r) { r.unregister(); });
+            });
+          }
+        `}} />
       </body>
     </html>
   );
