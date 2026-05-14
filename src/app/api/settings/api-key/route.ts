@@ -4,7 +4,7 @@ import { requireAuth } from "@/lib/auth-middleware";
 import { z } from "zod";
 
 export async function GET(req: NextRequest) {
-  const auth = requireAuth(req);
+  const auth = await requireAuth(req);
   if (auth instanceof NextResponse) return auth;
 
   const user = await prisma.user.findUnique({
@@ -25,7 +25,7 @@ const schema = z.object({
 });
 
 export async function POST(req: NextRequest) {
-  const auth = requireAuth(req);
+  const auth = await requireAuth(req);
   if (auth instanceof NextResponse) return auth;
 
   const body = await req.json();

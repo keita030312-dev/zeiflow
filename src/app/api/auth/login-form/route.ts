@@ -3,11 +3,14 @@ import { compare } from "bcryptjs";
 import { sign } from "jsonwebtoken";
 import { prisma } from "@/lib/db";
 import { cookies } from "next/headers";
+import { checkOrgGate } from "@/lib/auth-org-gate";
 
 function redirect303(url: string) {
+  // URLにASCII以外の文字が含まれる場合はエンコード
+  const safeUrl = encodeURI(url);
   return new NextResponse(null, {
     status: 303,
-    headers: { Location: url },
+    headers: { Location: safeUrl },
   });
 }
 
@@ -37,6 +40,12 @@ export async function POST(req: NextRequest) {
       return redirect303(buildUrl("/login?error=メールアドレスまたはパスワードが正しくありません", req));
     }
 
+    // 事務所の状態チェック(login API と共通化、bypass 防止)
+    const gate = await checkOrgGate(user.organizationId);
+    if (!gate.ok) {
+      return redirect303(buildUrl(`/login?error=${gate.error}`, req));
+    }
+
     const tokenPayload: Record<string, unknown> = { id: user.id, email: user.email, role: user.role };
     if (user.organizationId) {
       tokenPayload.orgId = user.organizationId;
@@ -59,6 +68,6 @@ export async function POST(req: NextRequest) {
 
     return redirect303(buildUrl("/dashboard", req));
   } catch {
-    return redirect303(buildUrl("/login?error=サーバーエラー", req));
+    return redirect303(buildUrl("/login?error=server_error", req));
   }
 }

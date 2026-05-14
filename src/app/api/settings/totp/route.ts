@@ -7,7 +7,7 @@ import { z } from "zod";
 
 // POST: Generate TOTP secret and return QR code
 export async function POST(req: NextRequest) {
-  const auth = requireAuth(req);
+  const auth = await requireAuth(req);
   if (auth instanceof NextResponse) return auth;
 
   const secret = generateSecret();
@@ -29,7 +29,7 @@ const verifySchema = z.object({
 
 // PUT: Verify TOTP code and enable 2FA
 export async function PUT(req: NextRequest) {
-  const auth = requireAuth(req);
+  const auth = await requireAuth(req);
   if (auth instanceof NextResponse) return auth;
 
   const body = await req.json();
@@ -79,7 +79,7 @@ export async function PUT(req: NextRequest) {
 
 // DELETE: Disable 2FA
 export async function DELETE(req: NextRequest) {
-  const auth = requireAuth(req);
+  const auth = await requireAuth(req);
   if (auth instanceof NextResponse) return auth;
 
   await prisma.user.update({
