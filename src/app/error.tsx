@@ -11,6 +11,17 @@ export default function RootError({
 }) {
   useEffect(() => {
     console.error(error);
+    // エラーをサーバーに通知(失敗しても無視)
+    fetch("/api/errors", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        message: error.message,
+        digest: error.digest,
+        stack: error.stack?.slice(0, 2000),
+        url: typeof window !== "undefined" ? window.location.href : "",
+      }),
+    }).catch(() => {});
   }, [error]);
 
   return (
