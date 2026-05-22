@@ -187,10 +187,12 @@ function PortalPage() {
     }
   }
 
+  const MAX_FILES = 5;
+
   function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
     const selected = e.target.files;
     if (!selected || selected.length === 0) return;
-    const fileList = Array.from(selected).filter((file) => {
+    const newFiles = Array.from(selected).filter((file) => {
       if (!ALLOWED_IMAGE_TYPES.has(file.type)) {
         alert(`${file.name}: 対応外の形式です（JPG/PNG/WEBP/GIFのみ）`);
         return false;
@@ -201,14 +203,21 @@ function PortalPage() {
       }
       return true;
     });
-    if (fileList.length === 0) {
+    if (newFiles.length === 0) {
       if (fileInputRef.current) fileInputRef.current.value = "";
       return;
     }
-    setFiles(fileList);
-    setPreviews(fileList.map((f) => URL.createObjectURL(f)));
+    const combined = [...files, ...newFiles];
+    if (combined.length > MAX_FILES) {
+      alert(`アップロードは最大${MAX_FILES}枚までです`);
+    }
+    const limited = combined.slice(0, MAX_FILES);
+    const addedFiles = limited.slice(files.length);
+    setFiles(limited);
+    setPreviews((prev) => [...prev, ...addedFiles.map((f) => URL.createObjectURL(f))]);
     setResults([]);
     setUploadErrors([]);
+    if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
   function removeFile(index: number) {
@@ -386,7 +395,6 @@ function PortalPage() {
                 ref={fileInputRef}
                 type="file"
                 accept="image/*"
-                capture="environment"
                 multiple
                 onChange={handleFileSelect}
                 className="hidden"
@@ -396,7 +404,7 @@ function PortalPage() {
             {/* Previews */}
             {previews.length > 0 && (
               <div>
-                <p className="text-sm text-[#94A3B8] mb-3">{files.length}件のファイルを選択中</p>
+                <p className="text-sm text-[#94A3B8] mb-3">{files.length}/5 枚選択中</p>
                 <div className="grid grid-cols-3 gap-2">
                   {previews.map((src, i) => (
                     <div key={i} className="relative group">
@@ -413,6 +421,15 @@ function PortalPage() {
                       </button>
                     </div>
                   ))}
+                  {files.length < MAX_FILES && (
+                    <div
+                      onClick={() => fileInputRef.current?.click()}
+                      className="w-full aspect-[3/4] rounded-lg border-2 border-dashed border-[rgba(212,175,55,0.2)] flex flex-col items-center justify-center cursor-pointer hover:border-[rgba(212,175,55,0.4)] transition-colors"
+                    >
+                      <span className="text-[#D4AF37] text-2xl leading-none">+</span>
+                      <span className="text-[9px] text-[#64748B] mt-1">追加</span>
+                    </div>
+                  )}
                 </div>
 
                 {/* Upload Button */}
