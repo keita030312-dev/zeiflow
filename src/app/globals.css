@@ -116,6 +116,15 @@
   background: rgba(212, 175, 55, 0.5);
 }
 
+/* Date input calendar icon — white on dark background */
+input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: invert(1) opacity(0.6);
+  cursor: pointer;
+}
+input[type="date"]::-webkit-calendar-picker-indicator:hover {
+  filter: invert(1) opacity(1);
+}
+
 /* Gold gradient text */
 .text-gold-gradient {
   background: linear-gradient(135deg, #D4AF37 0%, #E8D48B 50%, #D4AF37 100%);
