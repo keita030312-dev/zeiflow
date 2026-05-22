@@ -155,6 +155,9 @@ export default function ReceiptsPage() {
   const [filterClient, setFilterClient] = useState("");
   const [filterMonth, setFilterMonth] = useState("");
 
+  // Retry state
+  const [retryingReceiptId, setRetryingReceiptId] = useState<string | null>(null);
+
   // Lightbox state
   const [lightboxImage, setLightboxImage] = useState<string | null>(null);
 
@@ -1184,8 +1187,10 @@ export default function ReceiptsPage() {
                       {/* Retry Button for ERROR receipts */}
                       {(receipt.status === "ERROR" || receipt.status === "PROCESSING") && (
                         <button
+                          disabled={retryingReceiptId === receipt.id}
                           onClick={async (e) => {
                             e.stopPropagation();
+                            setRetryingReceiptId(receipt.id);
                             try {
                               const res = await fetch("/api/receipts/retry", {
                                 method: "POST",
@@ -1197,13 +1202,14 @@ export default function ReceiptsPage() {
                                 fetchReceipts();
                               } else {
                                 const data = await res.json();
-                                toast.error(data.error);
+                                toast.error(data.error || "再処理に失敗しました");
                               }
                             } catch { toast.error("再処理に失敗しました"); }
+                            finally { setRetryingReceiptId(null); }
                           }}
-                          className="w-full mt-1 py-1.5 rounded text-xs bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-colors"
+                          className="w-full mt-1 py-1.5 rounded text-xs bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                         >
-                          再試行
+                          {retryingReceiptId === receipt.id ? "処理中..." : "再試行"}
                         </button>
                       )}
 

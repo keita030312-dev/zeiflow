@@ -319,8 +319,8 @@ export async function processReceipt(
         ]
       : promptOrContent;
 
-    // 一時的エラー(429/503/overload/network)は最大3回リトライ(指数バックオフ)
-    const TRANSIENT = /rate.?limit|429|503|overload|ECONNRESET|ETIMEDOUT|ENETUNREACH|fetch failed/i;
+    // 一時的エラー(429/529/503/overload/network)は最大3回リトライ(指数バックオフ)
+    const TRANSIENT = /rate.?limit|429|529|503|overload|ECONNRESET|ETIMEDOUT|ENETUNREACH|fetch failed/i;
     const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
     const tryOnce = async (model: string) =>
