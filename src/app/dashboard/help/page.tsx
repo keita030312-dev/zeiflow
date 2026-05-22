@@ -297,7 +297,7 @@ export default function HelpPage() {
                     ZeiFlowの設定ページでキーを貼り付けて「保存」
                   </Step>
                 </ol>
-                <Note>料金はレシート1枚あたり約0.01〜0.03ドルです</Note>
+
               </CardContent>
             </Card>
 
