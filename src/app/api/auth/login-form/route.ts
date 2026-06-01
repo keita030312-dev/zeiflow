@@ -25,6 +25,7 @@ export async function POST(req: NextRequest) {
     const formData = await req.formData();
     const email = formData.get("email") as string;
     const password = formData.get("password") as string;
+    const totpCode = formData.get("totpCode") as string | null;
 
     if (!email || !password) {
       return redirect303(buildUrl("/login?error=入力してください", req));
@@ -44,6 +45,16 @@ export async function POST(req: NextRequest) {
     const gate = await checkOrgGate(user.organizationId);
     if (!gate.ok) {
       return redirect303(buildUrl(`/login?error=${gate.error}`, req));
+    }
+
+    if (user.totpEnabled && user.totpSecret) {
+      if (!totpCode) {
+        return redirect303(buildUrl("/login?error=二要素認証コードが必要です", req));
+      }
+      const { verifyTOTP } = await import("@/lib/totp");
+      if (!verifyTOTP(totpCode, user.totpSecret)) {
+        return redirect303(buildUrl("/login?error=認証コードが正しくありません", req));
+      }
     }
 
     const tokenPayload: Record<string, unknown> = { id: user.id, email: user.email, role: user.role };

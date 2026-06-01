@@ -92,6 +92,10 @@ export async function POST(req: NextRequest) {
       documentKind,
     );
 
+    if (results.length === 0) {
+      throw new Error("OCR結果が空です");
+    }
+
     // レシートにOCR結果を保存
     await prisma.receipt.update({
       where: { id: receipt.id },

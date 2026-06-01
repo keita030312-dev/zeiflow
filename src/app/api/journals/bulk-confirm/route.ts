@@ -45,15 +45,21 @@ export async function POST(req: NextRequest) {
   if (receiptIds.length > 0) {
     for (const receiptId of receiptIds) {
       const remaining = await prisma.journalEntry.count({
-        where: { receiptId, isConfirmed: false },
+        where: { receiptId, isConfirmed: false, ...scope },
       });
       if (remaining === 0) {
         // 仕訳からレシート参照を外してからレシートを削除（仕訳行は残る）
         await prisma.journalEntry.updateMany({
-          where: { receiptId },
+          where: { receiptId, ...scope },
           data: { receiptId: null },
         });
-        await prisma.receipt.delete({ where: { id: receiptId } }).catch(() => {});
+        const ownedReceipt = await prisma.receipt.findFirst({
+          where: { id: receiptId, ...scope },
+          select: { id: true },
+        });
+        if (ownedReceipt) {
+          await prisma.receipt.delete({ where: { id: receiptId } }).catch(() => {});
+        }
       }
     }
   }

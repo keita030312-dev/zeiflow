@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireAuth, getScope } from "@/lib/auth-middleware";
-import { randomUUID } from "crypto";
+import { randomBytes } from "crypto";
+
+function createPortalTokenValue() {
+  return randomBytes(32).toString("base64url");
+}
 
 export async function GET(req: NextRequest) {
   const auth = await requireAuth(req);
@@ -64,8 +68,7 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // なければ新規作成（期限なし）
-    const token = randomUUID();
+    const token = createPortalTokenValue();
 
     const portalToken = await prisma.clientPortalToken.create({
       data: {
@@ -74,7 +77,6 @@ export async function POST(req: NextRequest) {
         userId: auth.id,
         ...(auth.orgId ? { organizationId: auth.orgId } : {}),
         label: `${client.name}のポータル`,
-        // expiresAt なし = 期限なし
       },
     });
 
@@ -82,7 +84,7 @@ export async function POST(req: NextRequest) {
     await prisma.auditLog.create({
       data: {
         action: "PORTAL_TOKEN_CREATE",
-        detail: `ポータルリンク発行: ${client.name} (${portalToken.id})`,
+        detail: `ポータルリンク発行: ${client.name} (${portalToken.id}, 期限なし)`,
         userId: auth.id,
         ...(auth.orgId ? { organizationId: auth.orgId } : {}),
       },
