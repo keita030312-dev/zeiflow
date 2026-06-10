@@ -20,6 +20,50 @@ const journalSchema = z.object({
   receiptId: z.string().optional(),
 });
 
+const journalUpdateSchema = z.object({
+  id: z.string().min(1),
+  date: z.string().optional(),
+  debitAccount: z.string().min(1).optional(),
+  debitSubAccount: z.string().nullable().optional(),
+  creditAccount: z.string().min(1).optional(),
+  creditSubAccount: z.string().nullable().optional(),
+  amount: z.number().positive().optional(),
+  taxAmount: z.number().nullable().optional(),
+  taxRate: z.number().nullable().optional(),
+  description: z.string().min(1).optional(),
+  memo: z.string().nullable().optional(),
+  invoiceNumber: z.string().nullable().optional(),
+  isConfirmed: z.boolean().optional(),
+  clientId: z.string().optional(),
+  receiptId: z.string().nullable().optional(),
+});
+
+async function validateClientAndReceipt(
+  scope: ReturnType<typeof getScope>,
+  clientId: string,
+  receiptId?: string | null,
+) {
+  const client = await prisma.client.findFirst({
+    where: { id: clientId, ...scope },
+    select: { id: true },
+  });
+  if (!client) {
+    return NextResponse.json({ error: "顧客が見つかりません" }, { status: 404 });
+  }
+
+  if (receiptId) {
+    const receipt = await prisma.receipt.findFirst({
+      where: { id: receiptId, clientId, ...scope },
+      select: { id: true },
+    });
+    if (!receipt) {
+      return NextResponse.json({ error: "レシートが見つかりません" }, { status: 404 });
+    }
+  }
+
+  return null;
+}
+
 export async function GET(req: NextRequest) {
   const auth = await requireAuth(req);
   if (auth instanceof NextResponse) return auth;
@@ -77,6 +121,14 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  const scope = getScope(auth);
+  const ownershipError = await validateClientAndReceipt(
+    scope,
+    parsed.data.clientId,
+    parsed.data.receiptId,
+  );
+  if (ownershipError) return ownershipError;
+
   const entry = await prisma.journalEntry.create({
     data: {
       ...parsed.data,
@@ -94,14 +146,14 @@ export async function PUT(req: NextRequest) {
   if (auth instanceof NextResponse) return auth;
 
   const body = await req.json();
-  const { id, ...data } = body;
-
-  if (!id) {
+  const parsed = journalUpdateSchema.safeParse(body);
+  if (!parsed.success) {
     return NextResponse.json(
-      { error: "仕訳IDが必要です" },
+      { error: parsed.error.issues[0].message },
       { status: 400 }
     );
   }
+  const { id, ...data } = parsed.data;
 
   const scope = getScope(auth);
   const existing = await prisma.journalEntry.findFirst({
@@ -113,6 +165,16 @@ export async function PUT(req: NextRequest) {
       { status: 404 }
     );
   }
+
+  const nextClientId = data.clientId ?? existing.clientId;
+  const nextReceiptId =
+    data.receiptId === undefined ? existing.receiptId : data.receiptId;
+  const ownershipError = await validateClientAndReceipt(
+    scope,
+    nextClientId,
+    nextReceiptId,
+  );
+  if (ownershipError) return ownershipError;
 
   const entry = await prisma.journalEntry.update({
     where: { id },
@@ -159,14 +221,20 @@ export async function PUT(req: NextRequest) {
   if (data.isConfirmed === true && entry.receiptId) {
     const receiptId = entry.receiptId;
     const remaining = await prisma.journalEntry.count({
-      where: { receiptId, isConfirmed: false },
+      where: { receiptId, isConfirmed: false, ...scope },
     });
     if (remaining === 0) {
       await prisma.journalEntry.updateMany({
-        where: { receiptId },
+        where: { receiptId, ...scope },
         data: { receiptId: null },
       });
-      await prisma.receipt.delete({ where: { id: receiptId } }).catch(() => {});
+      const ownedReceipt = await prisma.receipt.findFirst({
+        where: { id: receiptId, ...scope },
+        select: { id: true },
+      });
+      if (ownedReceipt) {
+        await prisma.receipt.delete({ where: { id: receiptId } }).catch(() => {});
+      }
     }
   }
 
