@@ -34,8 +34,8 @@ function PortalPage() {
 
   const [clientName, setClientName] = useState("");
   const [clientCode, setClientCode] = useState("");
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(!!token);
+  const [error, setError] = useState(token ? "" : "無効なリンクです");
 
   // Upload state
   const [files, setFiles] = useState<File[]>([]);
@@ -63,11 +63,7 @@ function PortalPage() {
   }, [uploading]);
 
   useEffect(() => {
-    if (!token) {
-      setError("無効なリンクです");
-      setLoading(false);
-      return;
-    }
+    if (!token) return;
 
     fetch(`/api/portal/info?token=${token}`)
       .then((r) => {
