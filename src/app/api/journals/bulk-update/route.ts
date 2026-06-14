@@ -26,6 +26,7 @@ const entrySchema = z.object({
 
 const schema = z.object({
   entries: z.array(entrySchema).min(1).max(100),
+  confirm: z.boolean().optional().default(false),
 });
 
 export async function PUT(req: NextRequest) {
@@ -56,6 +57,7 @@ export async function PUT(req: NextRequest) {
       amount: true,
       taxAmount: true,
       taxRate: true,
+      receiptId: true,
     },
   });
   if (ownedEntries.length !== ids.length) {
@@ -105,14 +107,44 @@ export async function PUT(req: NextRequest) {
             description: entry.description,
             invoiceNumber: entry.invoiceNumber,
             memo: entry.memo,
+            ...(parsed.data.confirm ? { isConfirmed: true } : {}),
           },
         });
       }
 
+      if (parsed.data.confirm) {
+        const receiptIds = Array.from(
+          new Set(
+            ownedEntries
+              .map((entry) => entry.receiptId)
+              .filter((receiptId): receiptId is string => Boolean(receiptId)),
+          ),
+        );
+
+        for (const receiptId of receiptIds) {
+          const remaining = await tx.journalEntry.count({
+            where: { receiptId, isConfirmed: false, ...scope },
+          });
+          if (remaining === 0) {
+            await tx.journalEntry.updateMany({
+              where: { receiptId, ...scope },
+              data: { receiptId: null },
+            });
+            await tx.receipt.deleteMany({
+              where: { id: receiptId, ...scope },
+            });
+          }
+        }
+      }
+
       await tx.auditLog.create({
         data: {
-          action: "JOURNAL_BULK_UPDATE",
-          detail: `仕訳を一括編集: ${ids.length}件`,
+          action: parsed.data.confirm
+            ? "JOURNAL_BULK_UPDATE_AND_CONFIRM"
+            : "JOURNAL_BULK_UPDATE",
+          detail: parsed.data.confirm
+            ? `仕訳を一括編集して確定: ${ids.length}件`
+            : `仕訳を一括編集: ${ids.length}件`,
           userId: auth.id,
           ...(auth.orgId ? { organizationId: auth.orgId } : {}),
         },
@@ -128,5 +160,9 @@ export async function PUT(req: NextRequest) {
     );
   }
 
-  return NextResponse.json({ success: true, updated: ids.length });
+  return NextResponse.json({
+    success: true,
+    updated: ids.length,
+    confirmed: parsed.data.confirm ? ids.length : 0,
+  });
 }

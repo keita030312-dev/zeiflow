@@ -445,6 +445,7 @@ export default function JournalsPage() {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          confirm: true,
           entries: batchEditRows.map((row) => ({
             id: row.id,
             date: row.date,
@@ -462,7 +463,7 @@ export default function JournalsPage() {
       if (!res.ok) {
         throw new Error(data.error || "一括保存に失敗しました");
       }
-      toast.success(`${data.updated}件の仕訳を一括保存しました`);
+      toast.success(`${data.updated}件の仕訳を一括保存して確定しました`);
       setBatchEditRows([]);
       setSelectedIds(new Set());
       fetchEntries();
@@ -843,7 +844,7 @@ export default function JournalsPage() {
                   仕訳をまとめて編集
                 </CardTitle>
                 <p className="mt-1 text-xs text-[#64748B]">
-                  選択した{batchEditRows.length}件を確認して一括保存します
+                  選択した{batchEditRows.length}件を一括保存して確定します
                 </p>
               </div>
               <div className="flex items-center gap-2">
@@ -857,7 +858,7 @@ export default function JournalsPage() {
                   ) : (
                     <Save className="h-4 w-4" />
                   )}
-                  一括保存
+                  保存して確定
                 </button>
                 <button
                   onClick={closeBatchEdit}
@@ -989,7 +990,9 @@ export default function JournalsPage() {
                 disabled={savingBatchEdit}
                 className="px-5 py-2 rounded-md bg-gradient-to-r from-[#D4AF37] to-[#B8962E] text-[#0F172A] text-sm font-semibold disabled:opacity-50"
               >
-                {savingBatchEdit ? "保存中..." : `${batchEditRows.length}件を一括保存`}
+                  {savingBatchEdit
+                    ? "保存中..."
+                    : `${batchEditRows.length}件を保存して確定`}
               </button>
             </div>
           </CardContent>
