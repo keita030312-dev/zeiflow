@@ -35,7 +35,7 @@ const ACCOUNTS = [
   "売上高", "受取利息", "雑収入",
   "仕入高", "給料手当", "法定福利費", "旅費交通費", "通信費", "消耗品費", "水道光熱費",
   "地代家賃", "保険料", "修繕費", "広告宣伝費", "接待交際費", "会議費", "租税公課",
-  "減価償却費", "支払手数料", "雑費", "新聞図書費", "外注費", "福利厚生費", "荷造運賃", "車両費",
+  "減価償却費", "支払手数料", "雑費", "新聞図書費", "外注費", "福利厚生費", "荷造運賃", "車両費", "リース料",
 ];
 
 interface Client {
@@ -70,12 +70,32 @@ interface ReceiptResult {
     debitAccount: string;
     creditAccount: string;
     amount: number;
+    taxRate?: number | null;
     description: string;
     confidence: number;
   };
   journalEntry?: {
     id: string;
   };
+  allResults?: {
+    ocr: ReceiptResult["ocr"];
+    classification: ReceiptResult["classification"];
+  }[];
+  journalEntries?: {
+    id: string;
+  }[];
+}
+
+interface BatchJournalRow {
+  id: string;
+  date: string;
+  debitAccount: string;
+  creditAccount: string;
+  amount: number;
+  taxRate: string;
+  description: string;
+  invoiceNumber: string;
+  memo: string;
 }
 
 // 信頼度バッジ: 高(緑) / 中(黄) / 低(赤) を1行で表示
@@ -142,6 +162,8 @@ export default function ReceiptsPage() {
 
   // Multiple upload state
   const [uploadProgress, setUploadProgress] = useState<{ current: number; total: number } | null>(null);
+  const [batchRows, setBatchRows] = useState<BatchJournalRow[]>([]);
+  const [savingBatch, setSavingBatch] = useState(false);
 
   // Receipt history state
   const [receipts, setReceipts] = useState<ReceiptRecord[]>([]);
@@ -320,6 +342,36 @@ export default function ReceiptsPage() {
 
   const [uploadQuality, setUploadQuality] = useState<"fast" | "accurate" | "ultra">("accurate");
 
+  function rowsFromResult(data: ReceiptResult): BatchJournalRow[] {
+    const results = data.allResults?.length
+      ? data.allResults
+      : [{ ocr: data.ocr, classification: data.classification }];
+    const entries = data.journalEntries?.length
+      ? data.journalEntries
+      : data.journalEntry
+        ? [data.journalEntry]
+        : [];
+
+    return entries.flatMap((entry, index) => {
+      const extracted = results[index];
+      if (!extracted) return [];
+      return [{
+        id: entry.id,
+        date: extracted.ocr.date,
+        debitAccount: extracted.classification.debitAccount,
+        creditAccount: extracted.classification.creditAccount,
+        amount: extracted.classification.amount,
+        taxRate:
+          extracted.classification.taxRate == null
+            ? ""
+            : String(extracted.classification.taxRate),
+        description: extracted.classification.description,
+        invoiceNumber: extracted.ocr.invoiceNumber || "",
+        memo: "",
+      }];
+    });
+  }
+
   async function handleUpload(quality?: "fast" | "accurate" | "ultra") {
     const q = quality || uploadQuality;
     if (files.length === 0 || !selectedClient) {
@@ -329,12 +381,20 @@ export default function ReceiptsPage() {
 
     setProcessing(true);
     setResult(null);
+    setBatchRows([]);
 
     if (files.length === 1) {
       // Single file upload
       try {
         const data = await uploadSingleFile(files[0], q);
-        setResult(data);
+        if (data) {
+          const rows = rowsFromResult(data);
+          if (rows.length > 1) {
+            setBatchRows(rows);
+          } else {
+            setResult(data);
+          }
+        }
         toast.success("レシートを読み取りました");
         fetchReceipts();
       } catch (err) {
@@ -360,10 +420,17 @@ export default function ReceiptsPage() {
         setUploadProgress({ current: Math.min(batch + BATCH_SIZE, files.length), total: files.length });
       }
 
-      const successResults = allResults.filter((r) => r.status === "fulfilled");
+      const successResults = allResults.filter(
+        (r): r is PromiseFulfilledResult<ReceiptResult | null> =>
+          r.status === "fulfilled" && r.value !== null,
+      );
       const failedResults = allResults.filter((r) => r.status === "rejected");
       const successCount = successResults.length;
-      const lastResult = successCount > 0 ? (successResults[successCount - 1] as PromiseFulfilledResult<ReceiptResult | null>).value : null;
+      const lastResult = successCount > 0 ? successResults[successCount - 1].value : null;
+      const rows = successResults.flatMap((settled) => {
+        const data = settled.value;
+        return data ? rowsFromResult(data) : [];
+      });
 
       if (failedResults.length > 0) {
         toast.error(`${failedResults.length}件の読み取りに失敗しました`);
@@ -374,7 +441,9 @@ export default function ReceiptsPage() {
 
       if (successCount > 0) {
         toast.success(`${successCount}/${files.length} 件のレシートを処理しました`);
-        if (successCount === 1 && lastResult) {
+        if (rows.length > 0) {
+          setBatchRows(rows);
+        } else if (successCount === 1 && lastResult) {
           setResult(lastResult);
         }
         fetchReceipts();
@@ -386,6 +455,7 @@ export default function ReceiptsPage() {
     setFiles([]);
     setPreview(null);
     setResult(null);
+    setBatchRows([]);
     setUploadProgress(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
@@ -561,6 +631,68 @@ export default function ReceiptsPage() {
     }
   }
 
+  function updateBatchRow(
+    id: string,
+    field: keyof Omit<BatchJournalRow, "id">,
+    value: string | number,
+  ) {
+    setBatchRows((prev) =>
+      prev.map((row) => (row.id === id ? { ...row, [field]: value } : row)),
+    );
+  }
+
+  async function saveBatchRows() {
+    if (batchRows.length === 0) return;
+    const invalid = batchRows.find(
+      (row) =>
+        !row.date ||
+        !row.debitAccount ||
+        !row.creditAccount ||
+        !row.description.trim() ||
+        !Number.isInteger(row.amount) ||
+        row.amount <= 0,
+    );
+    if (invalid) {
+      toast.error("日付・勘定科目・金額・摘要を確認してください");
+      return;
+    }
+
+    setSavingBatch(true);
+    try {
+      const res = await fetch("/api/journals/bulk-update", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          entries: batchRows.map((row) => ({
+            id: row.id,
+            date: row.date,
+            debitAccount: row.debitAccount,
+            creditAccount: row.creditAccount,
+            amount: row.amount,
+            taxRate: row.taxRate === "" ? null : Number(row.taxRate),
+            description: row.description,
+            invoiceNumber: row.invoiceNumber || null,
+            memo: row.memo || null,
+          })),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "一括保存に失敗しました");
+      }
+      toast.success(`${data.updated}件の仕訳を一括更新しました`);
+      setBatchRows([]);
+      setFiles([]);
+      fetchReceipts();
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "一括保存に失敗しました",
+      );
+    } finally {
+      setSavingBatch(false);
+    }
+  }
+
   return (
     <div>
       <div className="mb-8">
@@ -732,7 +864,7 @@ export default function ReceiptsPage() {
               )}
 
               {/* Selected Files Preview */}
-              {files.length > 0 && !processing && !result && (
+              {files.length > 0 && !processing && !result && batchRows.length === 0 && (
                 <div className="space-y-3">
                   <p className="text-xs text-[#94A3B8]">{files.length}/5 枚選択中</p>
                   <div className="flex gap-2 flex-wrap">
@@ -821,7 +953,153 @@ export default function ReceiptsPage() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-                {result ? (
+                {batchRows.length > 0 ? (
+                  <div className="space-y-4">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <Check className="h-4 w-4 text-emerald-400" />
+                          <span className="text-sm font-medium text-emerald-400">
+                            {batchRows.length}件の仕訳を読み取りました
+                          </span>
+                        </div>
+                        <p className="mt-1 text-xs text-[#64748B]">
+                            仕訳は登録済みです。必要な箇所を修正して更新してください
+                        </p>
+                      </div>
+                      <Button
+                        onClick={saveBatchRows}
+                        disabled={savingBatch}
+                        className="bg-gradient-to-r from-[#D4AF37] to-[#B8962E] text-[#0F172A] font-semibold"
+                      >
+                        {savingBatch ? (
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        ) : (
+                          <Save className="h-4 w-4 mr-2" />
+                        )}
+                        {batchRows.length}件を一括更新
+                      </Button>
+                    </div>
+
+                    <div className="max-h-[620px] overflow-auto border border-[rgba(212,175,55,0.1)] rounded-md">
+                      <table className="w-full min-w-[960px] border-collapse">
+                        <thead className="sticky top-0 z-10 bg-[#1E293B]">
+                          <tr className="border-b border-[rgba(212,175,55,0.12)]">
+                            <th className="px-2 py-2 text-left text-[10px] text-[#64748B]">日付</th>
+                            <th className="px-2 py-2 text-left text-[10px] text-[#64748B]">借方</th>
+                            <th className="px-2 py-2 text-left text-[10px] text-[#64748B]">貸方</th>
+                            <th className="px-2 py-2 text-right text-[10px] text-[#64748B]">金額</th>
+                            <th className="px-2 py-2 text-left text-[10px] text-[#64748B]">税率</th>
+                            <th className="px-2 py-2 text-left text-[10px] text-[#64748B]">摘要</th>
+                            <th className="px-2 py-2 text-left text-[10px] text-[#64748B]">登録番号</th>
+                            <th className="px-2 py-2 text-left text-[10px] text-[#64748B]">メモ</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {batchRows.map((row) => (
+                            <tr
+                              key={row.id}
+                              className="border-b border-[rgba(212,175,55,0.06)] last:border-0"
+                            >
+                              <td className="p-1.5">
+                                <input
+                                  type="date"
+                                  value={row.date}
+                                  onChange={(e) => updateBatchRow(row.id, "date", e.target.value)}
+                                  className="w-[130px] rounded bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.12)] px-2 py-1.5 text-xs text-[#F1F5F9]"
+                                />
+                              </td>
+                              <td className="p-1.5">
+                                <select
+                                  value={row.debitAccount}
+                                  onChange={(e) => updateBatchRow(row.id, "debitAccount", e.target.value)}
+                                  className="w-[125px] rounded bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.12)] px-2 py-1.5 text-xs text-[#F1F5F9]"
+                                >
+                                  {ACCOUNTS.map((account) => (
+                                    <option key={account} value={account}>{account}</option>
+                                  ))}
+                                </select>
+                              </td>
+                              <td className="p-1.5">
+                                <select
+                                  value={row.creditAccount}
+                                  onChange={(e) => updateBatchRow(row.id, "creditAccount", e.target.value)}
+                                  className="w-[125px] rounded bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.12)] px-2 py-1.5 text-xs text-[#F1F5F9]"
+                                >
+                                  {ACCOUNTS.map((account) => (
+                                    <option key={account} value={account}>{account}</option>
+                                  ))}
+                                </select>
+                              </td>
+                              <td className="p-1.5">
+                                <input
+                                  type="number"
+                                  min={1}
+                                  value={row.amount}
+                                  onChange={(e) => updateBatchRow(row.id, "amount", Number(e.target.value))}
+                                  className="w-[105px] rounded bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.12)] px-2 py-1.5 text-right text-xs text-[#F1F5F9]"
+                                />
+                              </td>
+                              <td className="p-1.5">
+                                <select
+                                  value={row.taxRate}
+                                  onChange={(e) => updateBatchRow(row.id, "taxRate", e.target.value)}
+                                  className="w-[80px] rounded bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.12)] px-2 py-1.5 text-xs text-[#F1F5F9]"
+                                >
+                                  <option value="">対象外</option>
+                                  <option value="0.1">10%</option>
+                                  <option value="0.08">8%</option>
+                                </select>
+                              </td>
+                              <td className="p-1.5">
+                                <input
+                                  type="text"
+                                  value={row.description}
+                                  onChange={(e) => updateBatchRow(row.id, "description", e.target.value)}
+                                  className="w-[180px] rounded bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.12)] px-2 py-1.5 text-xs text-[#F1F5F9]"
+                                />
+                              </td>
+                              <td className="p-1.5">
+                                <input
+                                  type="text"
+                                  value={row.invoiceNumber}
+                                  onChange={(e) => updateBatchRow(row.id, "invoiceNumber", e.target.value)}
+                                  className="w-[130px] rounded bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.12)] px-2 py-1.5 text-xs text-[#F1F5F9]"
+                                />
+                              </td>
+                              <td className="p-1.5">
+                                <input
+                                  type="text"
+                                  value={row.memo}
+                                  onChange={(e) => updateBatchRow(row.id, "memo", e.target.value)}
+                                  className="w-[150px] rounded bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.12)] px-2 py-1.5 text-xs text-[#F1F5F9]"
+                                />
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    <div className="flex gap-2">
+                      <Button
+                        onClick={saveBatchRows}
+                        disabled={savingBatch}
+                        className="flex-1 bg-gradient-to-r from-[#D4AF37] to-[#B8962E] text-[#0F172A] font-semibold"
+                      >
+                        {savingBatch ? "更新中..." : `${batchRows.length}件を一括更新`}
+                      </Button>
+                      <Button
+                        onClick={reset}
+                        disabled={savingBatch}
+                        variant="secondary"
+                        className="bg-[#334155] text-[#F1F5F9] hover:bg-[#475569]"
+                      >
+                        編集を終了
+                      </Button>
+                    </div>
+                  </div>
+                ) : result ? (
                   <div
                     className="space-y-5"
                   >

@@ -1,0 +1,132 @@
+import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
+import { prisma } from "@/lib/db";
+import { getScope, requireAuth } from "@/lib/auth-middleware";
+
+const entrySchema = z.object({
+  id: z.string().min(1),
+  date: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "日付はYYYY-MM-DD形式で入力してください")
+    .refine((value) => {
+      const date = new Date(`${value}T00:00:00Z`);
+      return (
+        !Number.isNaN(date.getTime()) &&
+        date.toISOString().slice(0, 10) === value
+      );
+    }, "日付が不正です"),
+  debitAccount: z.string().trim().min(1).max(100),
+  creditAccount: z.string().trim().min(1).max(100),
+  amount: z.number().int().positive().max(1_000_000_000),
+  taxRate: z.union([z.literal(0.1), z.literal(0.08), z.null()]),
+  description: z.string().trim().min(1).max(500),
+  invoiceNumber: z.string().trim().max(100).nullable(),
+  memo: z.string().trim().max(1000).nullable(),
+});
+
+const schema = z.object({
+  entries: z.array(entrySchema).min(1).max(100),
+});
+
+export async function PUT(req: NextRequest) {
+  const auth = await requireAuth(req);
+  if (auth instanceof NextResponse) return auth;
+
+  const parsed = schema.safeParse(await req.json());
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: parsed.error.issues[0]?.message || "入力内容が不正です" },
+      { status: 400 },
+    );
+  }
+
+  const ids = parsed.data.entries.map((entry) => entry.id);
+  if (new Set(ids).size !== ids.length) {
+    return NextResponse.json(
+      { error: "同じ仕訳が重複しています" },
+      { status: 400 },
+    );
+  }
+
+  const scope = getScope(auth);
+  const ownedEntries = await prisma.journalEntry.findMany({
+    where: { id: { in: ids }, ...scope },
+    select: {
+      id: true,
+      amount: true,
+      taxAmount: true,
+      taxRate: true,
+    },
+  });
+  if (ownedEntries.length !== ids.length) {
+    return NextResponse.json(
+      { error: "更新できない仕訳が含まれています" },
+      { status: 403 },
+    );
+  }
+
+  const ownedEntryMap = new Map(
+    ownedEntries.map((entry) => [entry.id, entry]),
+  );
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      for (const entry of parsed.data.entries) {
+        const existing = ownedEntryMap.get(entry.id);
+        if (!existing) {
+          throw new Error("更新できない仕訳が含まれています");
+        }
+
+        const date = new Date(entry.date);
+        if (Number.isNaN(date.getTime())) {
+          throw new Error("日付が不正です");
+        }
+
+        const taxChanged =
+          existing.amount !== entry.amount ||
+          existing.taxRate !== entry.taxRate;
+        const taxAmount = taxChanged
+          ? entry.taxRate === null
+            ? null
+            : Math.round(
+                (entry.amount * entry.taxRate) / (1 + entry.taxRate),
+              )
+          : existing.taxAmount;
+
+        await tx.journalEntry.update({
+          where: { id: entry.id },
+          data: {
+            date,
+            debitAccount: entry.debitAccount,
+            creditAccount: entry.creditAccount,
+            amount: entry.amount,
+            taxAmount,
+            taxRate: entry.taxRate,
+            description: entry.description,
+            invoiceNumber: entry.invoiceNumber,
+            memo: entry.memo,
+          },
+        });
+      }
+
+      await tx.auditLog.create({
+        data: {
+          action: "JOURNAL_BULK_UPDATE",
+          detail: `仕訳を一括編集: ${ids.length}件`,
+          userId: auth.id,
+          ...(auth.orgId ? { organizationId: auth.orgId } : {}),
+        },
+      });
+    });
+  } catch (error) {
+    return NextResponse.json(
+      {
+        error:
+          error instanceof Error ? error.message : "一括更新に失敗しました",
+      },
+      { status: 500 },
+    );
+  }
+
+  return NextResponse.json({ success: true, updated: ids.length });
+}

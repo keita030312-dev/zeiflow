@@ -40,6 +40,7 @@ interface JournalEntry {
   creditAccount: string;
   amount: number;
   taxAmount?: number;
+  taxRate?: number;
   description: string;
   memo?: string;
   invoiceNumber?: string;
@@ -59,8 +60,21 @@ const ACCOUNTS = [
   "売上高", "受取利息", "雑収入",
   "仕入高", "給料手当", "法定福利費", "旅費交通費", "通信費", "消耗品費", "水道光熱費",
   "地代家賃", "保険料", "修繕費", "広告宣伝費", "接待交際費", "会議費", "租税公課",
-  "減価償却費", "支払手数料", "雑費", "新聞図書費", "外注費", "福利厚生費", "荷造運賃", "車両費",
+  "減価償却費", "支払手数料", "雑費", "新聞図書費", "外注費", "福利厚生費", "荷造運賃", "車両費", "リース料",
 ];
+
+interface BatchEditRow {
+  id: string;
+  clientName: string;
+  date: string;
+  debitAccount: string;
+  creditAccount: string;
+  amount: number;
+  taxRate: string;
+  description: string;
+  invoiceNumber: string;
+  memo: string;
+}
 
 export default function JournalsPage() {
   const [entries, setEntries] = useState<JournalEntry[]>([]);
@@ -75,10 +89,20 @@ export default function JournalsPage() {
     debitAccount: "",
     creditAccount: "",
     amount: 0,
+    taxRate: "",
     description: "",
     memo: "",
     invoiceNumber: "",
   });
+
+  // 一括置換フォーム
+  const [showReplaceForm, setShowReplaceForm] = useState(false);
+  const [replaceForm, setReplaceForm] = useState({
+    target: "both" as "debit" | "credit" | "both",
+    fromAccount: ACCOUNTS[0],
+    toAccount: ACCOUNTS[0],
+  });
+  const [replacing, setReplacing] = useState(false);
 
   const [showNewForm, setShowNewForm] = useState(false);
   const [newForm, setNewForm] = useState({
@@ -87,6 +111,7 @@ export default function JournalsPage() {
     debitAccount: ACCOUNTS[0],
     creditAccount: ACCOUNTS[0],
     amount: 0,
+    taxRate: "",
     description: "",
     invoiceNumber: "",
     memo: "",
@@ -102,6 +127,8 @@ export default function JournalsPage() {
   // Bulk confirm state
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkConfirming, setBulkConfirming] = useState(false);
+  const [batchEditRows, setBatchEditRows] = useState<BatchEditRow[]>([]);
+  const [savingBatchEdit, setSavingBatchEdit] = useState(false);
 
   useEffect(() => {
     fetch("/api/clients")
@@ -152,6 +179,7 @@ export default function JournalsPage() {
       debitAccount: entry.debitAccount,
       creditAccount: entry.creditAccount,
       amount: entry.amount,
+      taxRate: entry.taxRate != null ? String(entry.taxRate) : "",
       description: entry.description,
       memo: entry.memo || "",
       invoiceNumber: entry.invoiceNumber || "",
@@ -173,6 +201,7 @@ export default function JournalsPage() {
           debitAccount: editForm.debitAccount,
           creditAccount: editForm.creditAccount,
           amount: editForm.amount,
+          taxRate: editForm.taxRate !== "" ? Number(editForm.taxRate) : null,
           description: editForm.description,
           memo: editForm.memo || undefined,
           invoiceNumber: editForm.invoiceNumber || undefined,
@@ -188,6 +217,7 @@ export default function JournalsPage() {
                   debitAccount: editForm.debitAccount,
                   creditAccount: editForm.creditAccount,
                   amount: editForm.amount,
+                  taxRate: editForm.taxRate !== "" ? Number(editForm.taxRate) : undefined,
                   description: editForm.description,
                   memo: editForm.memo,
                   invoiceNumber: editForm.invoiceNumber,
@@ -254,6 +284,7 @@ export default function JournalsPage() {
           debitAccount: newForm.debitAccount,
           creditAccount: newForm.creditAccount,
           amount: newForm.amount,
+          taxRate: newForm.taxRate !== "" ? Number(newForm.taxRate) : undefined,
           description: newForm.description,
           invoiceNumber: newForm.invoiceNumber || undefined,
           memo: newForm.memo || undefined,
@@ -268,6 +299,7 @@ export default function JournalsPage() {
           debitAccount: ACCOUNTS[0],
           creditAccount: ACCOUNTS[0],
           amount: 0,
+          taxRate: "",
           description: "",
           invoiceNumber: "",
           memo: "",
@@ -296,15 +328,19 @@ export default function JournalsPage() {
     });
   }
 
-  function toggleSelectAll() {
-    const unconfirmedIds = entries.filter((e) => !e.isConfirmed).map((e) => e.id);
-    if (unconfirmedIds.every((id) => selectedIds.has(id))) {
-      // Deselect all
-      setSelectedIds(new Set());
-    } else {
-      // Select all unconfirmed
-      setSelectedIds(new Set(unconfirmedIds));
-    }
+  function toggleSelectAll(periodEntries: JournalEntry[]) {
+    const unconfirmedIds = periodEntries
+      .filter((entry) => !entry.isConfirmed)
+      .map((entry) => entry.id);
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (unconfirmedIds.every((id) => next.has(id))) {
+        unconfirmedIds.forEach((id) => next.delete(id));
+      } else {
+        unconfirmedIds.forEach((id) => next.add(id));
+      }
+      return next;
+    });
   }
 
   async function handleBulkConfirm(ids: string[]) {
@@ -349,6 +385,128 @@ export default function JournalsPage() {
     const ids = Array.from(selectedIds);
     if (ids.length === 0) return;
     await handleBulkConfirm(ids);
+  }
+
+  function openBatchEdit() {
+    const rows = entries
+      .filter((entry) => selectedIds.has(entry.id))
+      .map((entry) => ({
+        id: entry.id,
+        clientName: entry.client.name,
+        date: format(new Date(entry.date), "yyyy-MM-dd"),
+        debitAccount: entry.debitAccount,
+        creditAccount: entry.creditAccount,
+        amount: entry.amount,
+        taxRate: entry.taxRate == null ? "" : String(entry.taxRate),
+        description: entry.description,
+        invoiceNumber: entry.invoiceNumber || "",
+        memo: entry.memo || "",
+      }));
+    if (rows.length === 0) {
+      toast.info("編集する仕訳を選択してください");
+      return;
+    }
+    setEditingId(null);
+    setBatchEditRows(rows);
+  }
+
+  function updateBatchEditRow(
+    id: string,
+    field: keyof Omit<BatchEditRow, "id" | "clientName">,
+    value: string | number,
+  ) {
+    setBatchEditRows((prev) =>
+      prev.map((row) => (row.id === id ? { ...row, [field]: value } : row)),
+    );
+  }
+
+  function closeBatchEdit() {
+    setBatchEditRows([]);
+  }
+
+  async function saveBatchEdit() {
+    const invalid = batchEditRows.find(
+      (row) =>
+        !row.date ||
+        !row.debitAccount ||
+        !row.creditAccount ||
+        !row.description.trim() ||
+        !Number.isInteger(row.amount) ||
+        row.amount <= 0,
+    );
+    if (invalid) {
+      toast.error("日付・勘定科目・金額・摘要を確認してください");
+      return;
+    }
+
+    setSavingBatchEdit(true);
+    try {
+      const res = await fetch("/api/journals/bulk-update", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          entries: batchEditRows.map((row) => ({
+            id: row.id,
+            date: row.date,
+            debitAccount: row.debitAccount,
+            creditAccount: row.creditAccount,
+            amount: row.amount,
+            taxRate: row.taxRate === "" ? null : Number(row.taxRate),
+            description: row.description,
+            invoiceNumber: row.invoiceNumber || null,
+            memo: row.memo || null,
+          })),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "一括保存に失敗しました");
+      }
+      toast.success(`${data.updated}件の仕訳を一括保存しました`);
+      setBatchEditRows([]);
+      setSelectedIds(new Set());
+      fetchEntries();
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "一括保存に失敗しました",
+      );
+    } finally {
+      setSavingBatchEdit(false);
+    }
+  }
+
+  async function handleBulkReplace() {
+    if (replaceForm.fromAccount === replaceForm.toAccount) {
+      toast.error("変更前と変更後の科目が同じです");
+      return;
+    }
+    if (!confirm(`「${replaceForm.fromAccount}」を「${replaceForm.toAccount}」に一括置換しますか？\n\n対象: ${replaceForm.target === "debit" ? "借方のみ" : replaceForm.target === "credit" ? "貸方のみ" : "借方・貸方両方"}\n顧客: ${selectedClient === "all" ? "全顧客" : clients.find(c => c.id === selectedClient)?.name || "不明"}\n\n※ 未確定の仕訳のみ対象です`)) return;
+    setReplacing(true);
+    try {
+      const res = await fetch("/api/journals/bulk-replace", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          fromAccount: replaceForm.fromAccount,
+          toAccount: replaceForm.toAccount,
+          target: replaceForm.target,
+          clientId: selectedClient !== "all" ? selectedClient : undefined,
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        toast.success(`${data.total}件の仕訳を置換しました`);
+        setShowReplaceForm(false);
+        fetchEntries();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        toast.error(err.error || "置換に失敗しました");
+      }
+    } catch {
+      toast.error("通信エラーが発生しました");
+    } finally {
+      setReplacing(false);
+    }
   }
 
   const filtered = entries.filter(
@@ -412,7 +570,10 @@ export default function JournalsPage() {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[#64748B]" />
           <Input
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setSelectedIds(new Set());
+            }}
             placeholder="勘定科目・摘要で検索..."
             className="pl-10 bg-[rgba(30,41,59,0.6)] border-[rgba(212,175,55,0.08)] text-[#F1F5F9] placeholder:text-[#475569]"
           />
@@ -423,6 +584,14 @@ export default function JournalsPage() {
         >
           <Plus className="h-4 w-4" />
           新規仕訳
+        </button>
+        <button
+          onClick={() => setShowReplaceForm((v) => !v)}
+          className="flex items-center gap-2 px-4 py-2 rounded-md bg-[rgba(30,41,59,0.6)] border border-[rgba(212,175,55,0.08)] text-[#94A3B8] text-sm hover:text-[#F1F5F9] hover:border-[rgba(212,175,55,0.2)] transition-colors"
+          title="勘定科目を一括置換"
+        >
+          <Edit3 className="h-4 w-4" />
+          一括置換
         </button>
         <button
           onClick={() => {
@@ -502,6 +671,15 @@ export default function JournalsPage() {
                   className="w-full bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.15)] rounded px-3 py-2 text-sm text-[#F1F5F9]" />
               </div>
               <div>
+                <label className="block text-xs text-[#64748B] mb-1">消費税区分</label>
+                <select value={newForm.taxRate} onChange={(e) => setNewForm({ ...newForm, taxRate: e.target.value })}
+                  className="w-full bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.15)] rounded px-3 py-2 text-sm text-[#F1F5F9]">
+                  <option value="">対象外</option>
+                  <option value="0.1">課税10%</option>
+                  <option value="0.08">軽減8%</option>
+                </select>
+              </div>
+              <div>
                 <label className="block text-xs text-[#64748B] mb-1">摘要</label>
                 <input type="text" value={newForm.description} onChange={(e) => setNewForm({ ...newForm, description: e.target.value })}
                   placeholder="取引内容"
@@ -534,9 +712,85 @@ export default function JournalsPage() {
         </Card>
       )}
 
+      {/* 一括置換フォーム */}
+      {showReplaceForm && (
+        <Card className="glass-card border-[rgba(212,175,55,0.08)] mb-6">
+          <CardHeader className="py-3 px-5 bg-[rgba(212,175,55,0.03)]">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-sm text-[#D4AF37]">勘定科目 一括置換</CardTitle>
+              <button onClick={() => setShowReplaceForm(false)} className="text-[#64748B] hover:text-[#F1F5F9] transition-colors">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          </CardHeader>
+          <CardContent className="p-5">
+            <p className="text-xs text-[#64748B] mb-4">未確定の仕訳のみ対象です。借方・貸方の勘定科目を一括で置き換えます。</p>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div>
+                <label className="block text-xs text-[#64748B] mb-1">置換対象</label>
+                <select
+                  value={replaceForm.target}
+                  onChange={(e) => setReplaceForm({ ...replaceForm, target: e.target.value as "debit" | "credit" | "both" })}
+                  className="w-full bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.15)] rounded px-3 py-2 text-sm text-[#F1F5F9]"
+                >
+                  <option value="both">借方・貸方 両方</option>
+                  <option value="debit">借方のみ</option>
+                  <option value="credit">貸方のみ</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs text-[#64748B] mb-1">変更前科目</label>
+                <select
+                  value={replaceForm.fromAccount}
+                  onChange={(e) => setReplaceForm({ ...replaceForm, fromAccount: e.target.value })}
+                  className="w-full bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.15)] rounded px-3 py-2 text-sm text-[#F1F5F9]"
+                >
+                  {ACCOUNTS.map((a) => <option key={a} value={a}>{a}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs text-[#64748B] mb-1">変更後科目</label>
+                <select
+                  value={replaceForm.toAccount}
+                  onChange={(e) => setReplaceForm({ ...replaceForm, toAccount: e.target.value })}
+                  className="w-full bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.15)] rounded px-3 py-2 text-sm text-[#F1F5F9]"
+                >
+                  {ACCOUNTS.map((a) => <option key={a} value={a}>{a}</option>)}
+                </select>
+              </div>
+            </div>
+            <div className="flex items-center gap-3 pt-4">
+              <button
+                onClick={handleBulkReplace}
+                disabled={replacing}
+                className="px-6 py-2 rounded-md bg-gradient-to-r from-[#D4AF37] to-[#B8962E] text-[#0F172A] text-sm font-semibold hover:opacity-90 transition-opacity disabled:opacity-50"
+              >
+                {replacing ? "置換中..." : "一括置換を実行"}
+              </button>
+              <button
+                onClick={() => setShowReplaceForm(false)}
+                className="px-6 py-2 rounded-md bg-[#334155] text-[#F1F5F9] text-sm hover:bg-[#475569] transition-colors"
+              >
+                キャンセル
+              </button>
+              <span className="text-xs text-[#475569]">
+                対象顧客: {selectedClient === "all" ? "全顧客" : clients.find(c => c.id === selectedClient)?.name || "不明"}
+              </span>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Period Tabs + Bulk Actions */}
       <div className="flex flex-wrap items-center gap-4 mb-6">
-        <Tabs value={periodTab} onValueChange={(v) => v && setPeriodTab(v)}>
+        <Tabs
+          value={periodTab}
+          onValueChange={(value) => {
+            if (!value) return;
+            setPeriodTab(value);
+            setSelectedIds(new Set());
+          }}
+        >
           <TabsList className="bg-[rgba(30,41,59,0.6)] border border-[rgba(212,175,55,0.08)]">
             <TabsTrigger value="monthly" className="data-[state=active]:bg-[rgba(212,175,55,0.15)] data-[state=active]:text-[#D4AF37]">月次</TabsTrigger>
             <TabsTrigger value="semi_annual" className="data-[state=active]:bg-[rgba(212,175,55,0.15)] data-[state=active]:text-[#D4AF37]">半期</TabsTrigger>
@@ -546,18 +800,28 @@ export default function JournalsPage() {
 
         <div className="flex items-center gap-2 ml-auto">
           {selectedIds.size > 0 && (
-            <button
-              onClick={handleConfirmSelected}
-              disabled={bulkConfirming}
-              className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-emerald-500/10 text-emerald-400 text-xs font-medium hover:bg-emerald-500/20 transition-colors disabled:opacity-50"
-            >
-              {bulkConfirming ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <CheckSquare className="h-3.5 w-3.5" />
-              )}
-              選択した仕訳を確定 ({selectedIds.size}件)
-            </button>
+            <>
+              <button
+                onClick={openBatchEdit}
+                disabled={savingBatchEdit}
+                className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-blue-500/10 text-blue-400 text-xs font-medium hover:bg-blue-500/20 transition-colors disabled:opacity-50"
+              >
+                <Edit3 className="h-3.5 w-3.5" />
+                まとめて編集 ({selectedIds.size}件)
+              </button>
+              <button
+                onClick={handleConfirmSelected}
+                disabled={bulkConfirming}
+                className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-emerald-500/10 text-emerald-400 text-xs font-medium hover:bg-emerald-500/20 transition-colors disabled:opacity-50"
+              >
+                {bulkConfirming ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <CheckSquare className="h-3.5 w-3.5" />
+                )}
+                選択した仕訳を確定 ({selectedIds.size}件)
+              </button>
+            </>
           )}
           <button
             onClick={handleConfirmAll}
@@ -569,6 +833,168 @@ export default function JournalsPage() {
           </button>
         </div>
       </div>
+
+      {batchEditRows.length > 0 && (
+        <Card className="glass-card border-[rgba(212,175,55,0.12)] mb-6">
+          <CardHeader className="py-3 px-5 bg-[rgba(212,175,55,0.03)]">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <CardTitle className="text-sm text-[#D4AF37]">
+                  仕訳をまとめて編集
+                </CardTitle>
+                <p className="mt-1 text-xs text-[#64748B]">
+                  選択した{batchEditRows.length}件を確認して一括保存します
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={saveBatchEdit}
+                  disabled={savingBatchEdit}
+                  className="flex items-center gap-2 px-4 py-2 rounded-md bg-gradient-to-r from-[#D4AF37] to-[#B8962E] text-[#0F172A] text-sm font-semibold disabled:opacity-50"
+                >
+                  {savingBatchEdit ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Save className="h-4 w-4" />
+                  )}
+                  一括保存
+                </button>
+                <button
+                  onClick={closeBatchEdit}
+                  disabled={savingBatchEdit}
+                  className="h-9 w-9 rounded-md flex items-center justify-center bg-[#334155] text-[#94A3B8] hover:text-[#F1F5F9] disabled:opacity-50"
+                  title="閉じる"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="max-h-[620px] overflow-auto">
+              <table className="w-full min-w-[1120px] border-collapse">
+                <thead className="sticky top-0 z-10 bg-[#1E293B]">
+                  <tr className="border-b border-[rgba(212,175,55,0.12)]">
+                    <th className="px-2 py-2 text-left text-[10px] text-[#64748B]">顧客</th>
+                    <th className="px-2 py-2 text-left text-[10px] text-[#64748B]">日付</th>
+                    <th className="px-2 py-2 text-left text-[10px] text-[#64748B]">借方</th>
+                    <th className="px-2 py-2 text-left text-[10px] text-[#64748B]">貸方</th>
+                    <th className="px-2 py-2 text-right text-[10px] text-[#64748B]">金額</th>
+                    <th className="px-2 py-2 text-left text-[10px] text-[#64748B]">税率</th>
+                    <th className="px-2 py-2 text-left text-[10px] text-[#64748B]">摘要</th>
+                    <th className="px-2 py-2 text-left text-[10px] text-[#64748B]">登録番号</th>
+                    <th className="px-2 py-2 text-left text-[10px] text-[#64748B]">メモ</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {batchEditRows.map((row) => (
+                    <tr
+                      key={row.id}
+                      className="border-b border-[rgba(212,175,55,0.06)] last:border-0"
+                    >
+                      <td className="p-1.5">
+                        <span className="block w-[110px] truncate text-xs text-[#94A3B8]">
+                          {row.clientName}
+                        </span>
+                      </td>
+                      <td className="p-1.5">
+                        <input
+                          type="date"
+                          value={row.date}
+                          onChange={(e) => updateBatchEditRow(row.id, "date", e.target.value)}
+                          className="w-[130px] rounded bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.12)] px-2 py-1.5 text-xs text-[#F1F5F9]"
+                        />
+                      </td>
+                      <td className="p-1.5">
+                        <select
+                          value={row.debitAccount}
+                          onChange={(e) => updateBatchEditRow(row.id, "debitAccount", e.target.value)}
+                          className="w-[125px] rounded bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.12)] px-2 py-1.5 text-xs text-[#F1F5F9]"
+                        >
+                          {ACCOUNTS.map((account) => (
+                            <option key={account} value={account}>{account}</option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className="p-1.5">
+                        <select
+                          value={row.creditAccount}
+                          onChange={(e) => updateBatchEditRow(row.id, "creditAccount", e.target.value)}
+                          className="w-[125px] rounded bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.12)] px-2 py-1.5 text-xs text-[#F1F5F9]"
+                        >
+                          {ACCOUNTS.map((account) => (
+                            <option key={account} value={account}>{account}</option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className="p-1.5">
+                        <input
+                          type="number"
+                          min={1}
+                          value={row.amount}
+                          onChange={(e) => updateBatchEditRow(row.id, "amount", Number(e.target.value))}
+                          className="w-[105px] rounded bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.12)] px-2 py-1.5 text-right text-xs text-[#F1F5F9]"
+                        />
+                      </td>
+                      <td className="p-1.5">
+                        <select
+                          value={row.taxRate}
+                          onChange={(e) => updateBatchEditRow(row.id, "taxRate", e.target.value)}
+                          className="w-[80px] rounded bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.12)] px-2 py-1.5 text-xs text-[#F1F5F9]"
+                        >
+                          <option value="">対象外</option>
+                          <option value="0.1">10%</option>
+                          <option value="0.08">8%</option>
+                        </select>
+                      </td>
+                      <td className="p-1.5">
+                        <input
+                          type="text"
+                          value={row.description}
+                          onChange={(e) => updateBatchEditRow(row.id, "description", e.target.value)}
+                          className="w-[180px] rounded bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.12)] px-2 py-1.5 text-xs text-[#F1F5F9]"
+                        />
+                      </td>
+                      <td className="p-1.5">
+                        <input
+                          type="text"
+                          value={row.invoiceNumber}
+                          onChange={(e) => updateBatchEditRow(row.id, "invoiceNumber", e.target.value)}
+                          className="w-[130px] rounded bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.12)] px-2 py-1.5 text-xs text-[#F1F5F9]"
+                        />
+                      </td>
+                      <td className="p-1.5">
+                        <input
+                          type="text"
+                          value={row.memo}
+                          onChange={(e) => updateBatchEditRow(row.id, "memo", e.target.value)}
+                          className="w-[150px] rounded bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.12)] px-2 py-1.5 text-xs text-[#F1F5F9]"
+                        />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="flex justify-end gap-2 border-t border-[rgba(212,175,55,0.08)] p-4">
+              <button
+                onClick={closeBatchEdit}
+                disabled={savingBatchEdit}
+                className="px-5 py-2 rounded-md bg-[#334155] text-[#F1F5F9] text-sm hover:bg-[#475569] disabled:opacity-50"
+              >
+                キャンセル
+              </button>
+              <button
+                onClick={saveBatchEdit}
+                disabled={savingBatchEdit}
+                className="px-5 py-2 rounded-md bg-gradient-to-r from-[#D4AF37] to-[#B8962E] text-[#0F172A] text-sm font-semibold disabled:opacity-50"
+              >
+                {savingBatchEdit ? "保存中..." : `${batchEditRows.length}件を一括保存`}
+              </button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Journal Entries */}
       {loading ? (
@@ -604,7 +1030,7 @@ export default function JournalsPage() {
                           <input
                             type="checkbox"
                             checked={periodEntries.filter((e) => !e.isConfirmed).length > 0 && periodEntries.filter((e) => !e.isConfirmed).every((e) => selectedIds.has(e.id))}
-                            onChange={toggleSelectAll}
+                            onChange={() => toggleSelectAll(periodEntries)}
                             className="rounded border-[rgba(212,175,55,0.3)] bg-transparent accent-[#D4AF37]"
                           />
                         </th>
@@ -612,6 +1038,7 @@ export default function JournalsPage() {
                         <th className="text-left text-[#64748B] text-xs px-4 py-2">借方</th>
                         <th className="text-left text-[#64748B] text-xs px-4 py-2">貸方</th>
                         <th className="text-right text-[#64748B] text-xs px-4 py-2">金額</th>
+                        <th className="text-center text-[#64748B] text-xs px-2 py-2 w-[60px]">税率</th>
                         <th className="text-left text-[#64748B] text-xs px-4 py-2">摘要</th>
                         <th className="text-left text-[#64748B] text-xs px-4 py-2">登録番号</th>
                         <th className="text-left text-[#64748B] text-xs px-4 py-2">顧客</th>
@@ -644,6 +1071,14 @@ export default function JournalsPage() {
                               <input type="number" value={editForm.amount} onChange={(e) => setEditForm({ ...editForm, amount: Number(e.target.value) })}
                                 className="w-full bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.15)] rounded px-2 py-1 text-xs text-[#F1F5F9] text-right" />
                             </td>
+                            <td className="px-2 py-2">
+                              <select value={editForm.taxRate} onChange={(e) => setEditForm({ ...editForm, taxRate: e.target.value })}
+                                className="w-full bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.15)] rounded px-1 py-1 text-xs text-[#F1F5F9]">
+                                <option value="">対象外</option>
+                                <option value="0.1">10%</option>
+                                <option value="0.08">8%</option>
+                              </select>
+                            </td>
                             <td className="px-4 py-2">
                               <input type="text" value={editForm.description} onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
                                 className="w-full bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.15)] rounded px-2 py-1 text-xs text-[#F1F5F9]" />
@@ -670,7 +1105,7 @@ export default function JournalsPage() {
                             </td>
                           </tr>,
                           <tr key={`${entry.id}-memo`} className="border-b border-[rgba(212,175,55,0.08)] bg-[rgba(212,175,55,0.03)]">
-                            <td colSpan={9} className="px-4 py-2">
+                            <td colSpan={10} className="px-4 py-2">
                               <div className="flex items-center gap-2">
                                 <label className="text-[10px] text-[#64748B] whitespace-nowrap">メモ</label>
                                 <textarea value={editForm.memo} onChange={(e) => setEditForm({ ...editForm, memo: e.target.value })}
@@ -696,6 +1131,15 @@ export default function JournalsPage() {
                             <td className="px-4 py-2 text-xs text-[#F1F5F9]">{entry.debitAccount}</td>
                             <td className="px-4 py-2 text-xs text-[#F1F5F9]">{entry.creditAccount}</td>
                             <td className="px-4 py-2 text-xs text-[#F1F5F9] text-right font-[var(--font-inter)] font-medium">¥{entry.amount.toLocaleString()}</td>
+                            <td className="px-2 py-2 text-center">
+                              {entry.taxRate === 0.1 ? (
+                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 font-[var(--font-inter)]">10%</span>
+                              ) : entry.taxRate === 0.08 ? (
+                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 font-[var(--font-inter)]">8%</span>
+                              ) : (
+                                <span className="text-[10px] text-[#475569]">-</span>
+                              )}
+                            </td>
                             <td className="px-4 py-2 text-xs text-[#94A3B8] max-w-[200px] truncate">{entry.description}</td>
                             <td className="px-4 py-2 text-xs">
                               {entry.invoiceNumber ? (
@@ -747,6 +1191,15 @@ export default function JournalsPage() {
                             <input type="number" value={editForm.amount} onChange={(e) => setEditForm({ ...editForm, amount: Number(e.target.value) })}
                               className="w-full bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.15)] rounded px-2 py-1.5 text-sm text-[#F1F5F9]" />
                           </div>
+                        </div>
+                        <div>
+                          <label className="text-[10px] text-[#64748B]">消費税区分</label>
+                          <select value={editForm.taxRate} onChange={(e) => setEditForm({ ...editForm, taxRate: e.target.value })}
+                            className="w-full bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.15)] rounded px-2 py-1.5 text-sm text-[#F1F5F9]">
+                            <option value="">対象外</option>
+                            <option value="0.1">課税10%</option>
+                            <option value="0.08">軽減8%</option>
+                          </select>
                         </div>
                         <div>
                           <label className="text-[10px] text-[#64748B]">借方</label>
@@ -807,6 +1260,11 @@ export default function JournalsPage() {
                           <span className="text-[#D4AF37]">{entry.debitAccount}</span>
                           <span className="text-[#475569]">/</span>
                           <span className="text-[#94A3B8]">{entry.creditAccount}</span>
+                          {entry.taxRate === 0.1 ? (
+                            <span className="text-[10px] px-1 py-0.5 rounded bg-blue-500/10 text-blue-400 font-[var(--font-inter)]">10%</span>
+                          ) : entry.taxRate === 0.08 ? (
+                            <span className="text-[10px] px-1 py-0.5 rounded bg-amber-500/10 text-amber-400 font-[var(--font-inter)]">8%</span>
+                          ) : null}
                         </div>
                         <p className="text-xs text-[#64748B] mb-1 truncate">{entry.description}</p>
                         {entry.invoiceNumber ? (

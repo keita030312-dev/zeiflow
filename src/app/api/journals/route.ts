@@ -133,6 +133,14 @@ export async function POST(req: NextRequest) {
     data: {
       ...parsed.data,
       date: new Date(parsed.data.date),
+      taxAmount:
+        parsed.data.taxAmount ??
+        (parsed.data.taxRate
+          ? Math.round(
+              (parsed.data.amount * parsed.data.taxRate) /
+                (1 + parsed.data.taxRate),
+            )
+          : undefined),
       userId: auth.id,
       ...(auth.orgId ? { organizationId: auth.orgId } : {}),
     },
@@ -176,11 +184,26 @@ export async function PUT(req: NextRequest) {
   );
   if (ownershipError) return ownershipError;
 
+  const nextAmount = data.amount ?? existing.amount;
+  const nextTaxRate =
+    data.taxRate === undefined ? existing.taxRate : data.taxRate;
+  const shouldRecalculateTax =
+    data.taxAmount === undefined &&
+    ((data.amount !== undefined && data.amount !== existing.amount) ||
+      (data.taxRate !== undefined && data.taxRate !== existing.taxRate));
+  const recalculatedTaxAmount =
+    nextTaxRate === null
+      ? null
+      : Math.round((nextAmount * nextTaxRate) / (1 + nextTaxRate));
+
   const entry = await prisma.journalEntry.update({
     where: { id },
     data: {
       ...data,
       ...(data.date ? { date: new Date(data.date) } : {}),
+      ...(shouldRecalculateTax
+        ? { taxAmount: recalculatedTaxAmount }
+        : {}),
     },
   });
 
