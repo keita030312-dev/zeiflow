@@ -86,8 +86,13 @@ export async function PUT(req: NextRequest) {
   }
 
   const { id, ...rest } = parsed.data;
-  const account = await prisma.accountMaster.update({ where: { id }, data: rest });
-  return NextResponse.json(account);
+  try {
+    const account = await prisma.accountMaster.update({ where: { id }, data: rest });
+    return NextResponse.json(account);
+  } catch (error) {
+    reportError(error instanceof Error ? error : new Error(String(error)), { source: "accounts-put" });
+    return NextResponse.json({ error: "科目の更新に失敗しました" }, { status: 500 });
+  }
 }
 
 export async function DELETE(req: NextRequest) {
@@ -101,6 +106,25 @@ export async function DELETE(req: NextRequest) {
   const existing = await prisma.accountMaster.findFirst({ where: { id, ...scope } });
   if (!existing) return NextResponse.json({ error: "科目が見つかりません" }, { status: 404 });
 
-  await prisma.accountMaster.delete({ where: { id } });
-  return NextResponse.json({ success: true });
+  // 仕訳で使用中の科目は削除不可（無効化を促す）
+  const usageCount = await prisma.journalEntry.count({
+    where: {
+      OR: [{ debitAccount: existing.name }, { creditAccount: existing.name }],
+      ...scope,
+    },
+  });
+  if (usageCount > 0) {
+    return NextResponse.json(
+      { error: `この科目は${usageCount}件の仕訳で使用中です。削除の代わりに「無効化」してください。` },
+      { status: 400 }
+    );
+  }
+
+  try {
+    await prisma.accountMaster.delete({ where: { id } });
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    reportError(error instanceof Error ? error : new Error(String(error)), { source: "accounts-delete" });
+    return NextResponse.json({ error: "科目の削除に失敗しました" }, { status: 500 });
+  }
 }

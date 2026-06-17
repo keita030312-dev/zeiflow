@@ -424,7 +424,7 @@ export default function ClientsPage() {
   );
 
   const taxTypeLabel: Record<string, string> = {
-    STANDARD: "本則課税",
+    STANDARD: "原則課税",
     SIMPLIFIED: "簡易課税",
     EXEMPT: "免税",
   };
