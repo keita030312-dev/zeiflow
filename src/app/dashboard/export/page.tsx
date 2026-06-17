@@ -50,6 +50,7 @@ export default function ExportPage() {
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [exporting, setExporting] = useState(false);
+  const [excludeExported, setExcludeExported] = useState(false);
 
   useEffect(() => {
     fetch("/api/clients")
@@ -114,6 +115,7 @@ export default function ExportPage() {
           periodType,
           startDate,
           endDate,
+          excludeExported,
         }),
       });
 
@@ -281,6 +283,20 @@ export default function ExportPage() {
                     />
                   </div>
                 </div>
+              </div>
+
+              {/* 出力済み除外オプション */}
+              <div className="flex items-center gap-2 py-1">
+                <input
+                  type="checkbox"
+                  id="excludeExported"
+                  checked={excludeExported}
+                  onChange={(e) => setExcludeExported(e.target.checked)}
+                  className="rounded border-[rgba(212,175,55,0.3)] bg-transparent accent-[#D4AF37] w-4 h-4 cursor-pointer"
+                />
+                <label htmlFor="excludeExported" className="text-sm text-[#94A3B8] cursor-pointer select-none">
+                  前回出力済みを除く（同一顧客・同一形式の出力済み期間を除外）
+                </label>
               </div>
 
               <div className="flex gap-3">

@@ -90,6 +90,7 @@ interface BatchEditRow {
   creditAccount: string;
   amount: number;
   taxRate: string;
+  taxCategory: string;
   description: string;
   invoiceNumber: string;
   memo: string;
@@ -430,6 +431,7 @@ export default function JournalsPage() {
         creditAccount: entry.creditAccount,
         amount: entry.amount,
         taxRate: entry.taxRate == null ? "" : String(entry.taxRate),
+        taxCategory: entry.taxCategory || "",
         description: entry.description,
         invoiceNumber: entry.invoiceNumber || "",
         memo: entry.memo || "",
@@ -485,6 +487,7 @@ export default function JournalsPage() {
             creditAccount: row.creditAccount,
             amount: row.amount,
             taxRate: row.taxRate === "" ? null : Number(row.taxRate),
+            taxCategory: row.taxCategory || null,
             description: row.description,
             invoiceNumber: row.invoiceNumber || null,
             memo: row.memo || null,
@@ -912,7 +915,7 @@ export default function JournalsPage() {
           </CardHeader>
           <CardContent className="p-0">
             <div className="max-h-[620px] overflow-auto">
-              <table className="w-full min-w-[1120px] border-collapse">
+              <table className="w-full min-w-[1280px] border-collapse">
                 <thead className="sticky top-0 z-10 bg-[#1E293B]">
                   <tr className="border-b border-[rgba(212,175,55,0.12)]">
                     <th className="px-2 py-2 text-left text-[10px] text-[#64748B]">顧客</th>
@@ -921,6 +924,7 @@ export default function JournalsPage() {
                     <th className="px-2 py-2 text-left text-[10px] text-[#64748B]">貸方</th>
                     <th className="px-2 py-2 text-right text-[10px] text-[#64748B]">金額</th>
                     <th className="px-2 py-2 text-left text-[10px] text-[#64748B]">税率</th>
+                    <th className="px-2 py-2 text-left text-[10px] text-[#64748B]">税区分</th>
                     <th className="px-2 py-2 text-left text-[10px] text-[#64748B]">摘要</th>
                     <th className="px-2 py-2 text-left text-[10px] text-[#64748B]">登録番号</th>
                     <th className="px-2 py-2 text-left text-[10px] text-[#64748B]">メモ</th>
@@ -979,12 +983,28 @@ export default function JournalsPage() {
                       <td className="p-1.5">
                         <select
                           value={row.taxRate}
-                          onChange={(e) => updateBatchEditRow(row.id, "taxRate", e.target.value)}
+                          onChange={(e) => {
+                            updateBatchEditRow(row.id, "taxRate", e.target.value);
+                            updateBatchEditRow(row.id, "taxCategory", "");
+                          }}
                           className="w-[80px] rounded bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.12)] px-2 py-1.5 text-xs text-[#F1F5F9]"
                         >
                           <option value="">対象外</option>
                           <option value="0.1">10%</option>
                           <option value="0.08">8%</option>
+                        </select>
+                      </td>
+                      <td className="p-1.5">
+                        <select
+                          value={row.taxCategory}
+                          onChange={(e) => updateBatchEditRow(row.id, "taxCategory", e.target.value)}
+                          className="w-[160px] rounded bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.12)] px-2 py-1.5 text-xs text-[#F1F5F9]"
+                        >
+                          {TAX_CATEGORY_OPTIONS.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.value || "対象外"}
+                            </option>
+                          ))}
                         </select>
                       </td>
                       <td className="p-1.5">

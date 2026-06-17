@@ -100,6 +100,7 @@ interface ReceiptResult {
   }[];
   journalEntries?: {
     id: string;
+    taxCategory?: string | null;
   }[];
 }
 
@@ -152,6 +153,7 @@ interface ReceiptRecord {
     creditAccount: string;
     amount: number;
     taxAmount?: number;
+    taxCategory?: string | null;
     description: string;
     invoiceNumber?: string;
     memo?: string;
@@ -566,7 +568,7 @@ export default function ReceiptsPage() {
       debitAccount: je.debitAccount,
       creditAccount: je.creditAccount,
       amount: je.amount,
-      taxCategory: "",
+      taxCategory: je.taxCategory || "",
       description: je.description,
       invoiceNumber: je.invoiceNumber || "",
       memo: je.memo || "",

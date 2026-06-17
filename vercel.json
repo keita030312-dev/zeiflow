@@ -8,6 +8,8 @@
     "src/app/api/export/route.ts": { "maxDuration": 60 },
     "src/app/api/export/pdf/route.ts": { "maxDuration": 60 },
     "src/app/api/import/route.ts": { "maxDuration": 60 },
+    "src/app/api/import/statement/route.ts": { "maxDuration": 60 },
+    "src/app/api/import/statement/save/route.ts": { "maxDuration": 60 },
     "src/app/api/dashboard/route.ts": { "maxDuration": 30 },
     "src/app/api/clients/[id]/analytics/route.ts": { "maxDuration": 30 }
   }

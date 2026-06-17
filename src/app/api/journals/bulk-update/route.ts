@@ -19,6 +19,7 @@ const entrySchema = z.object({
   creditAccount: z.string().trim().min(1).max(100),
   amount: z.number().int().positive().max(1_000_000_000),
   taxRate: z.union([z.literal(0.1), z.literal(0.08), z.null()]),
+  taxCategory: z.string().trim().max(100).nullable().optional(),
   description: z.string().trim().min(1).max(500),
   invoiceNumber: z.string().trim().max(100).nullable(),
   memo: z.string().trim().max(1000).nullable(),
@@ -104,6 +105,9 @@ export async function PUT(req: NextRequest) {
             amount: entry.amount,
             taxAmount,
             taxRate: entry.taxRate,
+            ...("taxCategory" in entry
+              ? { taxCategory: entry.taxCategory ?? null }
+              : {}),
             description: entry.description,
             invoiceNumber: entry.invoiceNumber,
             memo: entry.memo,

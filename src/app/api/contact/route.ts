@@ -3,13 +3,27 @@ import { Resend } from "resend";
 import { z } from "zod";
 
 const schema = z.object({
-  firmName: z.string().min(1, "事務所名を入力してください"),
-  name: z.string().min(1, "お名前を入力してください"),
-  email: z.string().email("正しいメールアドレスを入力してください"),
-  phone: z.string().optional(),
-  topic: z.string().optional(),
-  message: z.string().optional(),
+  firmName: z.string().trim().min(1, "事務所名を入力してください").max(100),
+  name: z.string().trim().min(1, "お名前を入力してください").max(100),
+  email: z.string().trim().email("正しいメールアドレスを入力してください").max(254),
+  phone: z.string().trim().max(30).optional(),
+  topic: z.string().trim().max(100).optional(),
+  message: z.string().trim().max(5000).optional(),
 });
+
+function escapeHtml(value: string) {
+  return value.replace(
+    /[&<>"']/g,
+    (char) =>
+      ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#039;",
+      })[char]!,
+  );
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -20,7 +34,20 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: msg }, { status: 400 });
     }
 
-    const { firmName, name, email, phone, topic, message } = parsed.data;
+    const {
+      firmName,
+      name,
+      email,
+      phone,
+      topic,
+      message,
+    } = parsed.data;
+    const safeFirmName = escapeHtml(firmName);
+    const safeName = escapeHtml(name);
+    const safeEmail = escapeHtml(email);
+    const safePhone = phone ? escapeHtml(phone) : "";
+    const safeTopic = topic ? escapeHtml(topic) : "";
+    const safeMessage = message ? escapeHtml(message) : "";
 
     if (process.env.RESEND_API_KEY) {
       const resend = new Resend(process.env.RESEND_API_KEY);
@@ -40,13 +67,13 @@ export async function POST(req: NextRequest) {
             </div>
             <div style="background: #f8f9fa; border-radius: 8px; padding: 30px;">
               <table style="width:100%; border-collapse:collapse; font-size:14px; color:#333;">
-                <tr><td style="padding:8px 0; color:#888; width:120px;">事務所名</td><td style="padding:8px 0; font-weight:bold;">${firmName}</td></tr>
-                <tr><td style="padding:8px 0; color:#888;">お名前</td><td style="padding:8px 0;">${name} 様</td></tr>
-                <tr><td style="padding:8px 0; color:#888;">メール</td><td style="padding:8px 0;"><a href="mailto:${email}" style="color:#D4AF37;">${email}</a></td></tr>
-                ${phone ? `<tr><td style="padding:8px 0; color:#888;">電話番号</td><td style="padding:8px 0;">${phone}</td></tr>` : ""}
-                ${topic ? `<tr><td style="padding:8px 0; color:#888;">相談内容</td><td style="padding:8px 0;">${topic}</td></tr>` : ""}
+                <tr><td style="padding:8px 0; color:#888; width:120px;">事務所名</td><td style="padding:8px 0; font-weight:bold;">${safeFirmName}</td></tr>
+                <tr><td style="padding:8px 0; color:#888;">お名前</td><td style="padding:8px 0;">${safeName} 様</td></tr>
+                <tr><td style="padding:8px 0; color:#888;">メール</td><td style="padding:8px 0;"><a href="mailto:${safeEmail}" style="color:#D4AF37;">${safeEmail}</a></td></tr>
+                ${safePhone ? `<tr><td style="padding:8px 0; color:#888;">電話番号</td><td style="padding:8px 0;">${safePhone}</td></tr>` : ""}
+                ${safeTopic ? `<tr><td style="padding:8px 0; color:#888;">相談内容</td><td style="padding:8px 0;">${safeTopic}</td></tr>` : ""}
               </table>
-              ${message ? `<div style="margin-top:20px; padding-top:20px; border-top:1px solid #e0e0e0;"><p style="color:#888; font-size:13px; margin:0 0 8px;">メッセージ</p><p style="color:#333; line-height:1.7; white-space:pre-wrap;">${message}</p></div>` : ""}
+              ${safeMessage ? `<div style="margin-top:20px; padding-top:20px; border-top:1px solid #e0e0e0;"><p style="color:#888; font-size:13px; margin:0 0 8px;">メッセージ</p><p style="color:#333; line-height:1.7; white-space:pre-wrap;">${safeMessage}</p></div>` : ""}
             </div>
             <p style="text-align:center; margin-top:24px; font-size:12px; color:#aaa;">このメールは ZeiFlow 無料相談フォームから自動送信されました</p>
           </div>
@@ -65,7 +92,7 @@ export async function POST(req: NextRequest) {
             </div>
             <div style="background: #f8f9fa; border-radius: 8px; padding: 30px;">
               <p style="color: #333; line-height: 1.8;">
-                ${name} 様<br><br>
+                ${safeName} 様<br><br>
                 無料相談のお申し込みありがとうございます。<br>
                 内容を確認のうえ、<strong>1営業日以内</strong>にご連絡いたします。<br><br>
                 お急ぎの場合は、直接メールにてご連絡ください。<br>
