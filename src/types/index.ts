@@ -66,6 +66,7 @@ export interface JournalEntryData {
   amount: number;
   taxAmount?: number;
   taxRate?: number;
+  taxCategory?: string;
   description: string;
   invoiceNumber?: string;
   memo?: string;
@@ -73,6 +74,11 @@ export interface JournalEntryData {
   clientId: string;
   receiptId?: string;
 }
+
+export type ClientTaxInfo = {
+  accountingMethod: "TAX_INCLUSIVE" | "TAX_EXCLUSIVE";
+  taxType: "STANDARD" | "SIMPLIFIED" | "EXEMPT";
+};
 
 export interface OcrResult {
   storeName: string;

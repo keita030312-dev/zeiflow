@@ -49,6 +49,7 @@ interface Client {
   clientType: string;
   fiscalYearStart: number;
   taxType: string;
+  accountingMethod: string;
   invoiceRegNumber?: string;
   notes?: string;
   _count: { journalEntries: number; receipts: number };
@@ -146,21 +147,36 @@ function ClientForm({
           </Select>
         </div>
         <div className="space-y-2">
-          <Label className="text-[#94A3B8]">課税区分</Label>
+          <Label className="text-[#94A3B8]">申告区分</Label>
           <Select
             value={formData.taxType}
             onValueChange={(v) => v && setFormData({ ...formData, taxType: v })}
           >
             <SelectTrigger className="bg-[rgba(15,23,42,0.5)] border-[rgba(212,175,55,0.12)] text-[#F1F5F9]">
-              <SelectValue>{formData.taxType === "STANDARD" ? "本則課税" : formData.taxType === "SIMPLIFIED" ? "簡易課税" : "免税"}</SelectValue>
+              <SelectValue>{formData.taxType === "STANDARD" ? "原則課税" : formData.taxType === "SIMPLIFIED" ? "簡易課税" : "免税"}</SelectValue>
             </SelectTrigger>
             <SelectContent className="bg-[#1E293B] border-[rgba(212,175,55,0.15)]">
-              <SelectItem value="STANDARD">本則課税</SelectItem>
+              <SelectItem value="STANDARD">原則課税</SelectItem>
               <SelectItem value="SIMPLIFIED">簡易課税</SelectItem>
               <SelectItem value="EXEMPT">免税</SelectItem>
             </SelectContent>
           </Select>
         </div>
+      </div>
+      <div className="space-y-2">
+        <Label className="text-[#94A3B8]">経理処理</Label>
+        <Select
+          value={formData.accountingMethod}
+          onValueChange={(v) => v && setFormData({ ...formData, accountingMethod: v })}
+        >
+          <SelectTrigger className="bg-[rgba(15,23,42,0.5)] border-[rgba(212,175,55,0.12)] text-[#F1F5F9]">
+            <SelectValue>{formData.accountingMethod === "TAX_INCLUSIVE" ? "税込処理" : "税抜処理"}</SelectValue>
+          </SelectTrigger>
+          <SelectContent className="bg-[#1E293B] border-[rgba(212,175,55,0.15)]">
+            <SelectItem value="TAX_INCLUSIVE">税込処理（内税）</SelectItem>
+            <SelectItem value="TAX_EXCLUSIVE">税抜処理（外税）</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
       <div className="space-y-2">
         <Label className="text-[#94A3B8]">インボイス登録番号</Label>
@@ -207,6 +223,7 @@ const emptyFormData = {
   clientType: "CORPORATE",
   fiscalYearStart: 4,
   taxType: "STANDARD",
+  accountingMethod: "TAX_INCLUSIVE",
   invoiceRegNumber: "",
   notes: "",
 };
@@ -343,6 +360,7 @@ export default function ClientsPage() {
       clientType: client.clientType,
       fiscalYearStart: client.fiscalYearStart,
       taxType: client.taxType,
+      accountingMethod: client.accountingMethod || "TAX_INCLUSIVE",
       invoiceRegNumber: client.invoiceRegNumber || "",
       notes: client.notes || "",
     });

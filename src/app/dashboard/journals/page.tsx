@@ -41,6 +41,7 @@ interface JournalEntry {
   amount: number;
   taxAmount?: number;
   taxRate?: number;
+  taxCategory?: string;
   description: string;
   memo?: string;
   invoiceNumber?: string;
@@ -54,13 +55,31 @@ interface Client {
   name: string;
 }
 
-const ACCOUNTS = [
+const STD_ACCOUNTS = [
   "現金", "当座預金", "普通預金", "売掛金", "商品", "前払費用", "建物", "車両運搬具", "備品",
   "買掛金", "未払金", "未払費用", "預り金", "借入金",
   "売上高", "受取利息", "雑収入",
   "仕入高", "給料手当", "法定福利費", "旅費交通費", "通信費", "消耗品費", "水道光熱費",
   "地代家賃", "保険料", "修繕費", "広告宣伝費", "接待交際費", "会議費", "租税公課",
   "減価償却費", "支払手数料", "雑費", "新聞図書費", "外注費", "福利厚生費", "荷造運賃", "車両費", "リース料",
+];
+
+// 仕入側+売上側の詳細税区分
+const TAX_CATEGORY_OPTIONS = [
+  { value: "", label: "対象外" },
+  { value: "課対仕入内10%", label: "課対仕入内10%（仕入・内税10%）" },
+  { value: "課対仕入外10%", label: "課対仕入外10%（仕入・外税10%）" },
+  { value: "課対仕入内軽減8%", label: "課対仕入内軽減8%（仕入・内税・軽減）" },
+  { value: "課対仕入外軽減8%", label: "課対仕入外軽減8%（仕入・外税・軽減）" },
+  { value: "課対仕入内8%", label: "課対仕入内8%（仕入・内税・旧税率）" },
+  { value: "課対仕入外8%", label: "課対仕入外8%（仕入・外税・旧税率）" },
+  { value: "課対仕入内5%", label: "課対仕入内5%（仕入・内税・旧税率）" },
+  { value: "非課税仕入", label: "非課税仕入" },
+  { value: "課税売上内10%", label: "課税売上内10%（売上・内税10%）" },
+  { value: "課税売上外10%", label: "課税売上外10%（売上・外税10%）" },
+  { value: "課税売上内軽減8%", label: "課税売上内軽減8%（売上・内税・軽減）" },
+  { value: "課税売上外軽減8%", label: "課税売上外軽減8%（売上・外税・軽減）" },
+  { value: "非課税売上", label: "非課税売上" },
 ];
 
 interface BatchEditRow {
@@ -79,6 +98,7 @@ interface BatchEditRow {
 export default function JournalsPage() {
   const [entries, setEntries] = useState<JournalEntry[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
+  const [customAccounts, setCustomAccounts] = useState<string[]>([]);
   const [selectedClient, setSelectedClient] = useState("all");
   const [search, setSearch] = useState("");
   const [periodTab, setPeriodTab] = useState("monthly");
@@ -90,6 +110,7 @@ export default function JournalsPage() {
     creditAccount: "",
     amount: 0,
     taxRate: "",
+    taxCategory: "",
     description: "",
     memo: "",
     invoiceNumber: "",
@@ -99,8 +120,8 @@ export default function JournalsPage() {
   const [showReplaceForm, setShowReplaceForm] = useState(false);
   const [replaceForm, setReplaceForm] = useState({
     target: "both" as "debit" | "credit" | "both",
-    fromAccount: ACCOUNTS[0],
-    toAccount: ACCOUNTS[0],
+    fromAccount: STD_ACCOUNTS[0],
+    toAccount: STD_ACCOUNTS[0],
   });
   const [replacing, setReplacing] = useState(false);
 
@@ -108,10 +129,11 @@ export default function JournalsPage() {
   const [newForm, setNewForm] = useState({
     date: format(new Date(), "yyyy-MM-dd"),
     clientId: "",
-    debitAccount: ACCOUNTS[0],
-    creditAccount: ACCOUNTS[0],
+    debitAccount: STD_ACCOUNTS[0],
+    creditAccount: STD_ACCOUNTS[0],
     amount: 0,
     taxRate: "",
+    taxCategory: "",
     description: "",
     invoiceNumber: "",
     memo: "",
@@ -134,6 +156,12 @@ export default function JournalsPage() {
     fetch("/api/clients")
       .then((r) => r.json())
       .then(setClients)
+      .catch(() => {});
+    fetch("/api/accounts")
+      .then((r) => r.json())
+      .then((data: { name: string; isActive: boolean }[]) =>
+        setCustomAccounts(data.filter((a) => a.isActive).map((a) => a.name))
+      )
       .catch(() => {});
   }, []);
 
@@ -180,6 +208,7 @@ export default function JournalsPage() {
       creditAccount: entry.creditAccount,
       amount: entry.amount,
       taxRate: entry.taxRate != null ? String(entry.taxRate) : "",
+      taxCategory: entry.taxCategory || "",
       description: entry.description,
       memo: entry.memo || "",
       invoiceNumber: entry.invoiceNumber || "",
@@ -202,6 +231,7 @@ export default function JournalsPage() {
           creditAccount: editForm.creditAccount,
           amount: editForm.amount,
           taxRate: editForm.taxRate !== "" ? Number(editForm.taxRate) : null,
+          taxCategory: editForm.taxCategory || null,
           description: editForm.description,
           memo: editForm.memo || undefined,
           invoiceNumber: editForm.invoiceNumber || undefined,
@@ -285,6 +315,7 @@ export default function JournalsPage() {
           creditAccount: newForm.creditAccount,
           amount: newForm.amount,
           taxRate: newForm.taxRate !== "" ? Number(newForm.taxRate) : undefined,
+          taxCategory: newForm.taxCategory || undefined,
           description: newForm.description,
           invoiceNumber: newForm.invoiceNumber || undefined,
           memo: newForm.memo || undefined,
@@ -296,10 +327,11 @@ export default function JournalsPage() {
         setNewForm({
           date: format(new Date(), "yyyy-MM-dd"),
           clientId: "",
-          debitAccount: ACCOUNTS[0],
-          creditAccount: ACCOUNTS[0],
+          debitAccount: STD_ACCOUNTS[0],
+          creditAccount: STD_ACCOUNTS[0],
           amount: 0,
           taxRate: "",
+          taxCategory: "",
           description: "",
           invoiceNumber: "",
           memo: "",
@@ -653,14 +685,14 @@ export default function JournalsPage() {
                 <label className="block text-xs text-[#64748B] mb-1">借方科目</label>
                 <select value={newForm.debitAccount} onChange={(e) => setNewForm({ ...newForm, debitAccount: e.target.value })}
                   className="w-full bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.15)] rounded px-3 py-2 text-sm text-[#F1F5F9]">
-                  {ACCOUNTS.map((a) => <option key={a} value={a}>{a}</option>)}
+                  {[...STD_ACCOUNTS, ...customAccounts].map((a) => <option key={a} value={a}>{a}</option>)}
                 </select>
               </div>
               <div>
                 <label className="block text-xs text-[#64748B] mb-1">貸方科目</label>
                 <select value={newForm.creditAccount} onChange={(e) => setNewForm({ ...newForm, creditAccount: e.target.value })}
                   className="w-full bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.15)] rounded px-3 py-2 text-sm text-[#F1F5F9]">
-                  {ACCOUNTS.map((a) => <option key={a} value={a}>{a}</option>)}
+                  {[...STD_ACCOUNTS, ...customAccounts].map((a) => <option key={a} value={a}>{a}</option>)}
                 </select>
               </div>
             </div>
@@ -672,12 +704,19 @@ export default function JournalsPage() {
                   className="w-full bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.15)] rounded px-3 py-2 text-sm text-[#F1F5F9]" />
               </div>
               <div>
-                <label className="block text-xs text-[#64748B] mb-1">消費税区分</label>
-                <select value={newForm.taxRate} onChange={(e) => setNewForm({ ...newForm, taxRate: e.target.value })}
+                <label className="block text-xs text-[#64748B] mb-1">税率</label>
+                <select value={newForm.taxRate} onChange={(e) => setNewForm({ ...newForm, taxRate: e.target.value, taxCategory: "" })}
                   className="w-full bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.15)] rounded px-3 py-2 text-sm text-[#F1F5F9]">
                   <option value="">対象外</option>
-                  <option value="0.1">課税10%</option>
-                  <option value="0.08">軽減8%</option>
+                  <option value="0.1">10%</option>
+                  <option value="0.08">8%（軽減）</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs text-[#64748B] mb-1">税区分（詳細）</label>
+                <select value={newForm.taxCategory} onChange={(e) => setNewForm({ ...newForm, taxCategory: e.target.value })}
+                  className="w-full bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.15)] rounded px-3 py-2 text-sm text-[#F1F5F9]">
+                  {TAX_CATEGORY_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                 </select>
               </div>
               <div>
@@ -746,7 +785,7 @@ export default function JournalsPage() {
                   onChange={(e) => setReplaceForm({ ...replaceForm, fromAccount: e.target.value })}
                   className="w-full bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.15)] rounded px-3 py-2 text-sm text-[#F1F5F9]"
                 >
-                  {ACCOUNTS.map((a) => <option key={a} value={a}>{a}</option>)}
+                  {[...STD_ACCOUNTS, ...customAccounts].map((a) => <option key={a} value={a}>{a}</option>)}
                 </select>
               </div>
               <div>
@@ -756,7 +795,7 @@ export default function JournalsPage() {
                   onChange={(e) => setReplaceForm({ ...replaceForm, toAccount: e.target.value })}
                   className="w-full bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.15)] rounded px-3 py-2 text-sm text-[#F1F5F9]"
                 >
-                  {ACCOUNTS.map((a) => <option key={a} value={a}>{a}</option>)}
+                  {[...STD_ACCOUNTS, ...customAccounts].map((a) => <option key={a} value={a}>{a}</option>)}
                 </select>
               </div>
             </div>
@@ -912,7 +951,7 @@ export default function JournalsPage() {
                           onChange={(e) => updateBatchEditRow(row.id, "debitAccount", e.target.value)}
                           className="w-[125px] rounded bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.12)] px-2 py-1.5 text-xs text-[#F1F5F9]"
                         >
-                          {ACCOUNTS.map((account) => (
+                          {[...STD_ACCOUNTS, ...customAccounts].map((account) => (
                             <option key={account} value={account}>{account}</option>
                           ))}
                         </select>
@@ -923,7 +962,7 @@ export default function JournalsPage() {
                           onChange={(e) => updateBatchEditRow(row.id, "creditAccount", e.target.value)}
                           className="w-[125px] rounded bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.12)] px-2 py-1.5 text-xs text-[#F1F5F9]"
                         >
-                          {ACCOUNTS.map((account) => (
+                          {[...STD_ACCOUNTS, ...customAccounts].map((account) => (
                             <option key={account} value={account}>{account}</option>
                           ))}
                         </select>
@@ -1061,13 +1100,13 @@ export default function JournalsPage() {
                             <td className="px-4 py-2">
                               <select value={editForm.debitAccount} onChange={(e) => setEditForm({ ...editForm, debitAccount: e.target.value })}
                                 className="w-full bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.15)] rounded px-2 py-1 text-xs text-[#F1F5F9]">
-                                {ACCOUNTS.map((a) => <option key={a} value={a}>{a}</option>)}
+                                {[...STD_ACCOUNTS, ...customAccounts].map((a) => <option key={a} value={a}>{a}</option>)}
                               </select>
                             </td>
                             <td className="px-4 py-2">
                               <select value={editForm.creditAccount} onChange={(e) => setEditForm({ ...editForm, creditAccount: e.target.value })}
                                 className="w-full bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.15)] rounded px-2 py-1 text-xs text-[#F1F5F9]">
-                                {ACCOUNTS.map((a) => <option key={a} value={a}>{a}</option>)}
+                                {[...STD_ACCOUNTS, ...customAccounts].map((a) => <option key={a} value={a}>{a}</option>)}
                               </select>
                             </td>
                             <td className="px-4 py-2">
@@ -1196,26 +1235,33 @@ export default function JournalsPage() {
                           </div>
                         </div>
                         <div>
-                          <label className="text-[10px] text-[#64748B]">消費税区分</label>
-                          <select value={editForm.taxRate} onChange={(e) => setEditForm({ ...editForm, taxRate: e.target.value })}
+                          <label className="text-[10px] text-[#64748B]">税率</label>
+                          <select value={editForm.taxRate} onChange={(e) => setEditForm({ ...editForm, taxRate: e.target.value, taxCategory: "" })}
                             className="w-full bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.15)] rounded px-2 py-1.5 text-sm text-[#F1F5F9]">
                             <option value="">対象外</option>
-                            <option value="0.1">課税10%</option>
-                            <option value="0.08">軽減8%</option>
+                            <option value="0.1">10%</option>
+                            <option value="0.08">8%（軽減）</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="text-[10px] text-[#64748B]">税区分（詳細）</label>
+                          <select value={editForm.taxCategory} onChange={(e) => setEditForm({ ...editForm, taxCategory: e.target.value })}
+                            className="w-full bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.15)] rounded px-2 py-1.5 text-sm text-[#F1F5F9]">
+                            {TAX_CATEGORY_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                           </select>
                         </div>
                         <div>
                           <label className="text-[10px] text-[#64748B]">借方</label>
                           <select value={editForm.debitAccount} onChange={(e) => setEditForm({ ...editForm, debitAccount: e.target.value })}
                             className="w-full bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.15)] rounded px-2 py-1.5 text-sm text-[#F1F5F9]">
-                            {ACCOUNTS.map((a) => <option key={a} value={a}>{a}</option>)}
+                            {[...STD_ACCOUNTS, ...customAccounts].map((a) => <option key={a} value={a}>{a}</option>)}
                           </select>
                         </div>
                         <div>
                           <label className="text-[10px] text-[#64748B]">貸方</label>
                           <select value={editForm.creditAccount} onChange={(e) => setEditForm({ ...editForm, creditAccount: e.target.value })}
                             className="w-full bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.15)] rounded px-2 py-1.5 text-sm text-[#F1F5F9]">
-                            {ACCOUNTS.map((a) => <option key={a} value={a}>{a}</option>)}
+                            {[...STD_ACCOUNTS, ...customAccounts].map((a) => <option key={a} value={a}>{a}</option>)}
                           </select>
                         </div>
                         <div>
