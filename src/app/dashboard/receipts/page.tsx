@@ -209,6 +209,7 @@ export default function ReceiptsPage() {
     debitAccount: "",
     creditAccount: "",
     amount: 0,
+    taxCategory: "",
     description: "",
     invoiceNumber: "",
     memo: "",
@@ -565,6 +566,7 @@ export default function ReceiptsPage() {
       debitAccount: je.debitAccount,
       creditAccount: je.creditAccount,
       amount: je.amount,
+      taxCategory: "",
       description: je.description,
       invoiceNumber: je.invoiceNumber || "",
       memo: je.memo || "",
@@ -582,6 +584,7 @@ export default function ReceiptsPage() {
           debitAccount: editForm.debitAccount,
           creditAccount: editForm.creditAccount,
           amount: editForm.amount,
+          taxCategory: editForm.taxCategory || null,
           description: editForm.description,
           memo: editForm.memo || undefined,
           invoiceNumber: editForm.invoiceNumber || undefined,
@@ -1597,6 +1600,13 @@ export default function ReceiptsPage() {
                             <label className="text-xs text-[#94A3B8]">金額</label>
                             <input type="number" value={editForm.amount} onChange={(e) => setEditForm({ ...editForm, amount: Number(e.target.value) })}
                               className="w-full rounded-md bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.12)] text-[#F1F5F9] text-sm px-2 py-1.5" />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-xs text-[#94A3B8]">税区分</label>
+                            <select value={editForm.taxCategory} onChange={(e) => setEditForm({ ...editForm, taxCategory: e.target.value })}
+                              className="w-full rounded-md bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.12)] text-[#F1F5F9] text-sm px-2 py-1.5">
+                              {TAX_CATEGORY_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.value || "対象外"}</option>)}
+                            </select>
                           </div>
                           <div className="space-y-1">
                             <label className="text-xs text-[#94A3B8]">摘要</label>
