@@ -11,6 +11,7 @@ const clientSchema = z.object({
   clientType: z.enum(["CORPORATE", "INDIVIDUAL"]).default("CORPORATE"),
   fiscalYearStart: z.number().min(1).max(12).default(4),
   taxType: z.enum(["STANDARD", "SIMPLIFIED", "EXEMPT"]).default("STANDARD"),
+  accountingMethod: z.enum(["TAX_INCLUSIVE", "TAX_EXCLUSIVE"]).default("TAX_INCLUSIVE"),
   invoiceRegNumber: z
     .string()
     .regex(/^T\d{13}$/, "インボイス登録番号はT+13桁の数字で入力してください")
@@ -87,6 +88,7 @@ const updateSchema = z.object({
   clientType: z.enum(["CORPORATE", "INDIVIDUAL"]).default("CORPORATE"),
   fiscalYearStart: z.number().min(1).max(12).default(4),
   taxType: z.enum(["STANDARD", "SIMPLIFIED", "EXEMPT"]).default("STANDARD"),
+  accountingMethod: z.enum(["TAX_INCLUSIVE", "TAX_EXCLUSIVE"]).default("TAX_INCLUSIVE"),
   invoiceRegNumber: z
     .string()
     .regex(/^T\d{13}$/, "インボイス登録番号はT+13桁の数字で入力してください")

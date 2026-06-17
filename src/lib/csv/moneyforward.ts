@@ -1,12 +1,35 @@
-import type { JournalEntryData } from "@/types";
+import type { JournalEntryData, ClientTaxInfo } from "@/types";
+import { deriveTaxCategory, REVENUE_ACCOUNTS } from "@/lib/tax-categories";
 import { format } from "date-fns";
+
+// MF形式の税区分文字列: 「課対仕入内10%」→「課税仕入 10%(税込)」に変換
+function toMfTaxLabel(raw: string): string {
+  // 弥生形式の「課対仕入内10%」「課税売上外軽減8%」等を MF 形式に変換
+  if (raw === "対象外" || raw === "非課税仕入" || raw === "非課税売上") return raw;
+
+  const rateMatch = raw.match(/(\d+)%/);
+  const rate = rateMatch ? rateMatch[1] : "";
+  const isReduced = raw.includes("軽減");
+  const rateLabel = isReduced ? `${rate}%(軽減税率)(税込)` : `${rate}%(税込)`;
+
+  if (raw.startsWith("課対仕入") || raw.startsWith("課税仕入")) {
+    return `課税仕入 ${rateLabel}`;
+  }
+  if (raw.startsWith("課税売上")) {
+    return `課税売上 ${rateLabel}`;
+  }
+  return raw;
+}
 
 /**
  * マネーフォワードクラウド会計 仕訳インポートCSV生成
- * 仕訳帳 → CSVインポート形式
- * https://biz.moneyforward.com/
  */
-export function generateMoneyForwardCsv(entries: JournalEntryData[]): string {
+export function generateMoneyForwardCsv(
+  entries: JournalEntryData[],
+  client?: ClientTaxInfo
+): string {
+  const accountingMethod = client?.accountingMethod ?? "TAX_INCLUSIVE";
+
   const header = [
     "取引日",
     "借方勘定科目",
@@ -30,19 +53,20 @@ export function generateMoneyForwardCsv(entries: JournalEntryData[]): string {
 
   const rows = entries.map((entry) => {
     const dateStr = format(new Date(entry.date), "yyyy/MM/dd");
+    const isIncome = REVENUE_ACCOUNTS.has(entry.creditAccount);
 
-    // 税区分
-    let taxType = "対象外";
-    if (entry.taxRate === 0.08) {
-      taxType = "課税仕入 8%(税込)";
-    } else if (entry.taxRate === 0.1 || entry.taxAmount) {
-      taxType = "課税仕入 10%(税込)";
+    const resolved = entry.taxCategory
+      ?? deriveTaxCategory(entry.taxRate, isIncome, accountingMethod);
+
+    let debitTaxType = "対象外";
+    let creditTaxType = "対象外";
+    if (entry.taxRate || entry.taxAmount) {
+      const mfLabel = toMfTaxLabel(resolved);
+      if (isIncome) creditTaxType = mfLabel;
+      else debitTaxType = mfLabel;
     }
 
-    // 摘要
     const description = csvEscape(entry.description);
-
-    // 仕訳メモ: インボイス番号 + メモ
     const memoParts: string[] = [];
     if (entry.invoiceNumber) memoParts.push(entry.invoiceNumber);
     if (entry.memo) memoParts.push(entry.memo);
@@ -50,23 +74,23 @@ export function generateMoneyForwardCsv(entries: JournalEntryData[]): string {
 
     return [
       dateStr,
-      entry.debitAccount,
-      entry.debitSubAccount || "",
-      taxType,
+      csvEscape(entry.debitAccount),
+      entry.debitSubAccount ? csvEscape(entry.debitSubAccount) : "",
+      debitTaxType,
       entry.amount,
       entry.taxAmount || 0,
-      entry.creditAccount,
-      entry.creditSubAccount || "",
-      taxType,
+      csvEscape(entry.creditAccount),
+      entry.creditSubAccount ? csvEscape(entry.creditSubAccount) : "",
+      creditTaxType,
       entry.amount,
       entry.taxAmount || 0,
       description,
       memo,
-      "",               // タグ
-      "開始仕訳",        // MF仕訳タイプ
-      "No",             // 決算整理仕訳
-      "",               // 作成日時
-      "",               // 最終更新日時
+      "",
+      "通常仕訳",
+      "No",
+      "",
+      "",
     ].join(",");
   });
 
@@ -74,8 +98,10 @@ export function generateMoneyForwardCsv(entries: JournalEntryData[]): string {
 }
 
 function csvEscape(value: string): string {
-  if (value.includes(",") || value.includes('"') || value.includes("\n")) {
-    return `"${value.replace(/"/g, '""')}"`;
+  const cleaned = value.replace(/[\r\n]+/g, " ").trim();
+  const safe = /^[=+\-@\t]/.test(cleaned) ? `'${cleaned}` : cleaned;
+  if (safe.includes(",") || safe.includes('"')) {
+    return `"${safe.replace(/"/g, '""')}"`;
   }
-  return value;
+  return safe;
 }

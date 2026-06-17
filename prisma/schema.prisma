@@ -37,6 +37,7 @@ model Organization {
   auditLogs      AuditLog[]
   portalTokens   ClientPortalToken[]
   knowledgeFiles KnowledgeFile[]
+  accountMasters AccountMaster[]
 
   @@map("organizations")
 }
@@ -64,6 +65,7 @@ model User {
   auditLogs     AuditLog[]
   portalTokens  ClientPortalToken[]
   knowledgeFiles KnowledgeFile[]
+  accountMasters AccountMaster[]
 
   @@map("users")
 }
@@ -80,7 +82,8 @@ model Client {
   nameKana        String?   @map("name_kana")
   clientType      ClientType @default(CORPORATE) @map("client_type")
   fiscalYearStart Int       @default(4) @map("fiscal_year_start")
-  taxType         TaxType   @default(STANDARD) @map("tax_type")
+  taxType          TaxType          @default(STANDARD) @map("tax_type")
+  accountingMethod AccountingMethod @default(TAX_INCLUSIVE) @map("accounting_method")
   invoiceRegNumber String?  @map("invoice_reg_number")
   notes           String?
   createdAt       DateTime  @default(now()) @map("created_at")
@@ -110,6 +113,19 @@ enum TaxType {
   STANDARD
   SIMPLIFIED
   EXEMPT
+}
+
+enum AccountingMethod {
+  TAX_INCLUSIVE
+  TAX_EXCLUSIVE
+}
+
+enum AccountType {
+  ASSET
+  LIABILITY
+  EQUITY
+  REVENUE
+  EXPENSE
 }
 
 /// アップロード書類の種類（OCRプロンプト切替）
@@ -157,6 +173,7 @@ model JournalEntry {
   amount          Int
   taxAmount       Int?      @map("tax_amount")
   taxRate         Float?    @map("tax_rate")
+  taxCategory     String?   @map("tax_category")
   description     String
   invoiceNumber   String?   @map("invoice_number")
   memo            String?
@@ -239,6 +256,26 @@ model ClientPortalToken {
   organization Organization? @relation(fields: [organizationId], references: [id])
 
   @@map("client_portal_tokens")
+}
+
+model AccountMaster {
+  id             String      @id @default(cuid())
+  code           String
+  name           String
+  type           AccountType
+  isActive       Boolean     @default(true) @map("is_active")
+  sortOrder      Int         @default(0) @map("sort_order")
+  createdAt      DateTime    @default(now()) @map("created_at")
+  updatedAt      DateTime    @updatedAt @map("updated_at")
+  userId         String      @map("user_id")
+  organizationId String?     @map("organization_id")
+
+  user         User          @relation(fields: [userId], references: [id])
+  organization Organization? @relation(fields: [organizationId], references: [id])
+
+  @@unique([code, userId], name: "account_code_user")
+  @@unique([code, organizationId], name: "account_code_org")
+  @@map("account_masters")
 }
 
 model KnowledgeFile {

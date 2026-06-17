@@ -17,6 +17,7 @@ import {
   HelpCircle,
   Brain,
   Upload,
+  ListTree,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
@@ -33,6 +34,7 @@ const navItems = [
   { href: "/dashboard/journals", label: "仕訳管理", icon: BookOpen },
   { href: "/dashboard/export", label: "CSV出力", icon: FileDown },
   { href: "/dashboard/import", label: "CSVインポート", icon: Upload },
+  { href: "/dashboard/accounts", label: "勘定科目", icon: ListTree },
   { href: "/dashboard/knowledge", label: "仕訳ナレッジ", icon: Brain },
   { href: "/dashboard/audit", label: "監査ログ", icon: ClipboardList },
   { href: "/dashboard/org", label: "チーム管理", icon: Building2 },

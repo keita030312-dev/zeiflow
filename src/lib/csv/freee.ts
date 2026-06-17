@@ -1,12 +1,36 @@
-import type { JournalEntryData } from "@/types";
+import type { JournalEntryData, ClientTaxInfo } from "@/types";
+import { deriveTaxCategory, REVENUE_ACCOUNTS } from "@/lib/tax-categories";
 import { format } from "date-fns";
+
+// freee形式の税区分文字列に変換
+function toFreeeTaxLabel(raw: string, isIncome: boolean, isExclusive: boolean): string {
+  if (raw === "対象外") return "対象外";
+  if (raw === "非課税仕入" || raw === "非課税売上") return "非課税";
+
+  const rateMatch = raw.match(/(\d+)%/);
+  const rate = rateMatch ? rateMatch[1] : "";
+  const isReduced = raw.includes("軽減");
+  const taxCalc = isExclusive ? "(税抜)" : "(税込)";
+
+  if (isIncome) {
+    if (isReduced) return `課税売上${rate}%（軽）`;
+    return `課税売上${rate}%`;
+  } else {
+    if (isReduced) return `課対仕入${taxCalc}${rate}%（軽）`;
+    return `課対仕入${taxCalc}${rate}%`;
+  }
+}
 
 /**
  * freee会計 取引インポートCSV生成
- * 取引一覧 → CSVインポート形式
- * https://www.freee.co.jp/
  */
-export function generateFreeeCsv(entries: JournalEntryData[]): string {
+export function generateFreeeCsv(
+  entries: JournalEntryData[],
+  client?: ClientTaxInfo
+): string {
+  const accountingMethod = client?.accountingMethod ?? "TAX_INCLUSIVE";
+  const isExclusive = accountingMethod === "TAX_EXCLUSIVE";
+
   const header = [
     "収支区分",
     "管理番号",
@@ -32,45 +56,44 @@ export function generateFreeeCsv(entries: JournalEntryData[]): string {
 
   const rows = entries.map((entry) => {
     const dateStr = format(new Date(entry.date), "yyyy-MM-dd");
+    const isIncome = REVENUE_ACCOUNTS.has(entry.creditAccount);
 
-    // 税区分
-    let taxType = "対象外";
-    if (entry.taxRate === 0.08) {
-      taxType = "課対仕入(税込8%)";
-    } else if (entry.taxRate === 0.1 || entry.taxAmount) {
-      taxType = "課対仕入(税込10%)";
-    }
+    const resolved = entry.taxCategory
+      ?? deriveTaxCategory(entry.taxRate, isIncome, accountingMethod);
 
-    // 取引先（摘要から店舗名を使用）
+    const taxType = (entry.taxRate || entry.taxAmount)
+      ? toFreeeTaxLabel(resolved, isIncome, isExclusive)
+      : "対象外";
+
+    const taxCalcLabel = isExclusive ? "外税" : "内税";
+
     const partner = csvEscape(entry.description);
-
-    // 備考: インボイス番号 + メモ
     const remarkParts: string[] = [];
     if (entry.invoiceNumber) remarkParts.push(entry.invoiceNumber);
     if (entry.memo) remarkParts.push(entry.memo);
     const remarks = remarkParts.length > 0 ? csvEscape(remarkParts.join(" ")) : "";
 
     return [
-      "支出",           // 収支区分
-      "",               // 管理番号
-      dateStr,          // 発生日
-      "",               // 決済期日
-      partner,          // 取引先
-      entry.debitAccount, // 勘定科目
-      taxType,          // 税区分
-      entry.amount,     // 金額
-      "内税",           // 税計算区分
-      entry.taxAmount || 0,  // 税額
-      remarks,          // 備考
-      "",               // 品目
-      "",               // 部門
-      "",               // メモタグ
-      "",               // セグメント1
-      "",               // セグメント2
-      "",               // セグメント3
-      dateStr,          // 決済日
-      entry.creditAccount, // 決済口座
-      entry.amount,     // 決済金額
+      isIncome ? "収入" : "支出",
+      "",
+      dateStr,
+      "",
+      partner,
+      csvEscape(isIncome ? entry.creditAccount : entry.debitAccount),
+      taxType,
+      entry.amount,
+      taxCalcLabel,
+      entry.taxAmount || 0,
+      remarks,
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      dateStr,
+      csvEscape(isIncome ? entry.debitAccount : entry.creditAccount),
+      entry.amount,
     ].join(",");
   });
 
@@ -78,8 +101,10 @@ export function generateFreeeCsv(entries: JournalEntryData[]): string {
 }
 
 function csvEscape(value: string): string {
-  if (value.includes(",") || value.includes('"') || value.includes("\n")) {
-    return `"${value.replace(/"/g, '""')}"`;
+  const cleaned = value.replace(/[\r\n]+/g, " ").trim();
+  const safe = /^[=+\-@\t]/.test(cleaned) ? `'${cleaned}` : cleaned;
+  if (safe.includes(",") || safe.includes('"')) {
+    return `"${safe.replace(/"/g, '""')}"`;
   }
-  return value;
+  return safe;
 }
