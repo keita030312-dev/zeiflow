@@ -2,15 +2,15 @@ import type { JournalEntryData, ClientTaxInfo } from "@/types";
 import { deriveTaxCategory, REVENUE_ACCOUNTS } from "@/lib/tax-categories";
 import { format } from "date-fns";
 
-// MF形式の税区分文字列: 「課対仕入内10%」→「課税仕入 10%(税込)」に変換
-function toMfTaxLabel(raw: string): string {
-  // 弥生形式の「課対仕入内10%」「課税売上外軽減8%」等を MF 形式に変換
+// MF形式の税区分文字列に変換（内税: 税込、外税: 税抜）
+function toMfTaxLabel(raw: string, isExclusive: boolean): string {
   if (raw === "対象外" || raw === "非課税仕入" || raw === "非課税売上") return raw;
 
   const rateMatch = raw.match(/(\d+)%/);
   const rate = rateMatch ? rateMatch[1] : "";
   const isReduced = raw.includes("軽減");
-  const rateLabel = isReduced ? `${rate}%(軽減税率)(税込)` : `${rate}%(税込)`;
+  const taxSuffix = isExclusive ? "(税抜)" : "(税込)";
+  const rateLabel = isReduced ? `${rate}%（軽減税率）${taxSuffix}` : `${rate}%${taxSuffix}`;
 
   if (raw.startsWith("課対仕入") || raw.startsWith("課税仕入")) {
     return `課税仕入 ${rateLabel}`;
@@ -29,6 +29,7 @@ export function generateMoneyForwardCsv(
   client?: ClientTaxInfo
 ): string {
   const accountingMethod = client?.accountingMethod ?? "TAX_INCLUSIVE";
+  const isExclusive = accountingMethod === "TAX_EXCLUSIVE";
 
   const header = [
     "取引日",
@@ -61,7 +62,7 @@ export function generateMoneyForwardCsv(
     let debitTaxType = "対象外";
     let creditTaxType = "対象外";
     if (entry.taxRate || entry.taxAmount) {
-      const mfLabel = toMfTaxLabel(resolved);
+      const mfLabel = toMfTaxLabel(resolved, isExclusive);
       if (isIncome) creditTaxType = mfLabel;
       else debitTaxType = mfLabel;
     }

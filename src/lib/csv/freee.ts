@@ -65,7 +65,9 @@ export function generateFreeeCsv(
       ? toFreeeTaxLabel(resolved, isIncome, isExclusive)
       : "対象外";
 
-    const taxCalcLabel = isExclusive ? "外税" : "内税";
+    // 課税取引のみ内税/外税を設定。対象外・非課税は空欄
+    const hasTax = !!(entry.taxRate || entry.taxAmount) && taxType !== "対象外" && taxType !== "非課税";
+    const taxCalcLabel = hasTax ? (isExclusive ? "外税" : "内税") : "";
 
     const partner = csvEscape(entry.description);
     const remarkParts: string[] = [];
@@ -73,6 +75,7 @@ export function generateFreeeCsv(
     if (entry.memo) remarkParts.push(entry.memo);
     const remarks = remarkParts.length > 0 ? csvEscape(remarkParts.join(" ")) : "";
 
+    // 決済情報は空欄（未決済として登録し、freee側で入金/支払と照合させる）
     return [
       isIncome ? "収入" : "支出",
       "",
@@ -91,9 +94,9 @@ export function generateFreeeCsv(
       "",
       "",
       "",
-      dateStr,
-      csvEscape(isIncome ? entry.debitAccount : entry.creditAccount),
-      entry.amount,
+      "",
+      "",
+      "",
     ].join(",");
   });
 
