@@ -1081,6 +1081,7 @@ export default function JournalsPage() {
                         <th className="text-left text-[#64748B] text-xs px-4 py-2">貸方</th>
                         <th className="text-right text-[#64748B] text-xs px-4 py-2">金額</th>
                         <th className="text-center text-[#64748B] text-xs px-2 py-2 w-[60px]">税率</th>
+                        <th className="text-left text-[#64748B] text-xs px-2 py-2 w-[120px]">税区分</th>
                         <th className="text-left text-[#64748B] text-xs px-4 py-2">摘要</th>
                         <th className="text-left text-[#64748B] text-xs px-4 py-2">登録番号</th>
                         <th className="text-left text-[#64748B] text-xs px-4 py-2">顧客</th>
@@ -1114,11 +1115,17 @@ export default function JournalsPage() {
                                 className="w-full bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.15)] rounded px-2 py-1 text-xs text-[#F1F5F9] text-right" />
                             </td>
                             <td className="px-2 py-2">
-                              <select value={editForm.taxRate} onChange={(e) => setEditForm({ ...editForm, taxRate: e.target.value })}
+                              <select value={editForm.taxRate} onChange={(e) => setEditForm({ ...editForm, taxRate: e.target.value, taxCategory: "" })}
                                 className="w-full bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.15)] rounded px-1 py-1 text-xs text-[#F1F5F9]">
                                 <option value="">対象外</option>
                                 <option value="0.1">10%</option>
                                 <option value="0.08">8%</option>
+                              </select>
+                            </td>
+                            <td className="px-2 py-2">
+                              <select value={editForm.taxCategory} onChange={(e) => setEditForm({ ...editForm, taxCategory: e.target.value })}
+                                className="w-full bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.15)] rounded px-1 py-1 text-xs text-[#F1F5F9]">
+                                {TAX_CATEGORY_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.value || "対象外"}</option>)}
                               </select>
                             </td>
                             <td className="px-4 py-2">
@@ -1178,6 +1185,13 @@ export default function JournalsPage() {
                                 <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 font-[var(--font-inter)]">10%</span>
                               ) : entry.taxRate === 0.08 ? (
                                 <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 font-[var(--font-inter)]">8%</span>
+                              ) : (
+                                <span className="text-[10px] text-[#475569]">-</span>
+                              )}
+                            </td>
+                            <td className="px-2 py-2">
+                              {entry.taxCategory ? (
+                                <span className="text-[10px] text-[#94A3B8] truncate">{entry.taxCategory}</span>
                               ) : (
                                 <span className="text-[10px] text-[#475569]">-</span>
                               )}
