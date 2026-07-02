@@ -12,6 +12,14 @@ import { ensureOcrResultShape, toSafeInt, type OcrProcessRow } from "@/lib/ocr-r
 import { buildLearningText } from "@/lib/ai/learning-context";
 import { computeConsensus, parseOcrResponseToArray } from "@/lib/ai/ocr-consensus";
 
+// ===== OCRモデル・制限値（変更時はここだけ直す）=====
+const MODEL_FAST = "claude-sonnet-4-6";          // fast時のメイン / accurate時のフォールバック
+const MODEL_ACCURATE = "claude-opus-4-7";        // accurate/ultra時のメイン
+const MODEL_INVOICE_FALLBACK = "claude-haiku-4-5-20251001"; // 登録番号OCRのフォールバック
+const KNOWLEDGE_TEXT_MAX_CHARS = 15000;          // ナレッジのプロンプト上限
+const OCR_MAX_ATTEMPTS = 3;                      // 一時的エラーの最大試行回数
+const RETRY_BASE_DELAY_MS = 800;                 // リトライ待機の基数（×attempt）
+
 function getAnthropicClient(apiKey?: string | null) {
   const key = apiKey || (process.env.ANTHROPIC_API_KEY?.startsWith("sk-ant-") ? process.env.ANTHROPIC_API_KEY : null);
   if (!key) {
@@ -61,7 +69,7 @@ export async function processReceipt(
         .map((f) => `【${f.name}】\n${f.extractedText}`)
         .join("\n\n");
       // プロンプトサイズ制限（最大15000文字）
-      knowledgeText = combined.length > 15000 ? combined.substring(0, 15000) : combined;
+      knowledgeText = combined.length > KNOWLEDGE_TEXT_MAX_CHARS ? combined.substring(0, KNOWLEDGE_TEXT_MAX_CHARS) : combined;
     }
   }
 
@@ -94,10 +102,10 @@ export async function processReceipt(
   // - ultra: Opus 4.7 を3回並列実行 → 多数決(最高精度・コスト3倍)
   // - 登録番号専用: Sonnet 4.6(13桁数字読み取りには十分)
   // - フォールバック: Sonnet 4.6 → Haiku 4.5
-  const mainModel = (quality === "accurate" || quality === "ultra") ? "claude-opus-4-7" : "claude-sonnet-4-6";
-  const invoiceModel = "claude-sonnet-4-6";
-  const fallbackMain = "claude-sonnet-4-6";
-  const fallbackInvoice = "claude-haiku-4-5-20251001";
+  const mainModel = (quality === "accurate" || quality === "ultra") ? MODEL_ACCURATE : MODEL_FAST;
+  const invoiceModel = MODEL_FAST;
+  const fallbackMain = MODEL_FAST;
+  const fallbackInvoice = MODEL_INVOICE_FALLBACK;
 
   // ===== 段階実行: メインOCR → 必要時のみ登録番号専用OCR =====
   // callApi は2形態: シンプル(prompt: string) と キャッシュ対応(content blocks)
@@ -130,7 +138,7 @@ export async function processReceipt(
       });
 
     let lastErr: unknown;
-    for (let attempt = 1; attempt <= 3; attempt++) {
+    for (let attempt = 1; attempt <= OCR_MAX_ATTEMPTS; attempt++) {
       try {
         return await tryOnce(m);
       } catch (err) {
@@ -141,8 +149,8 @@ export async function processReceipt(
           return await tryOnce(fallback);
         }
         // 一時的エラー → 待ってリトライ
-        if (TRANSIENT.test(msg) && attempt < 3) {
-          await sleep(800 * attempt); // 800ms, 1600ms
+        if (TRANSIENT.test(msg) && attempt < OCR_MAX_ATTEMPTS) {
+          await sleep(RETRY_BASE_DELAY_MS * attempt); // 800ms, 1600ms
           continue;
         }
         throw err;
