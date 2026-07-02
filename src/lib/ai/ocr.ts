@@ -7,19 +7,7 @@ import {
   buildAmountPromptForKind,
 } from "@/lib/ai/ocr-prompts-extended";
 import type { DocumentKind } from "@/generated/prisma/enums";
-import { ensureOcrResultShape, type OcrProcessRow } from "@/lib/ocr-result-normalize";
-
-function toSafeInt(value: unknown): number {
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return Math.round(value);
-  }
-  if (typeof value === "string") {
-    const normalized = value.replace(/[^\d.-]/g, "");
-    const parsed = Number(normalized);
-    if (Number.isFinite(parsed)) return Math.round(parsed);
-  }
-  return 0;
-}
+import { ensureOcrResultShape, toSafeInt, type OcrProcessRow } from "@/lib/ocr-result-normalize";
 
 // ===== Ultra mode (multi-vote consensus) helpers =====
 

@@ -1,6 +1,6 @@
 import type { ClassificationResult, OcrResult } from "@/types";
 
-function toSafeInt(value: unknown): number {
+export function toSafeInt(value: unknown): number {
   if (typeof value === "number" && Number.isFinite(value)) return Math.round(value);
   if (typeof value === "string") {
     const n = Number(value.replace(/[^\d.-]/g, ""));
