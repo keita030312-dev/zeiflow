@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireAuth, getScope } from "@/lib/auth-middleware";
 import { recordOcrCorrection } from "@/lib/ai/learning";
+import { withErrorHandler } from "@/lib/api-handler";
 import { z } from "zod";
 
 const journalSchema = z.object({
@@ -66,7 +67,7 @@ async function validateClientAndReceipt(
   return null;
 }
 
-export async function GET(req: NextRequest) {
+async function handleGet(req: NextRequest) {
   const auth = await requireAuth(req);
   if (auth instanceof NextResponse) return auth;
 
@@ -110,7 +111,7 @@ export async function GET(req: NextRequest) {
   });
 }
 
-export async function POST(req: NextRequest) {
+async function handlePost(req: NextRequest) {
   const auth = await requireAuth(req);
   if (auth instanceof NextResponse) return auth;
 
@@ -151,7 +152,7 @@ export async function POST(req: NextRequest) {
   return NextResponse.json(entry);
 }
 
-export async function PUT(req: NextRequest) {
+async function handlePut(req: NextRequest) {
   const auth = await requireAuth(req);
   if (auth instanceof NextResponse) return auth;
 
@@ -266,7 +267,7 @@ export async function PUT(req: NextRequest) {
   return NextResponse.json(entry);
 }
 
-export async function DELETE(req: NextRequest) {
+async function handleDelete(req: NextRequest) {
   const auth = await requireAuth(req);
   if (auth instanceof NextResponse) return auth;
 
@@ -292,3 +293,8 @@ export async function DELETE(req: NextRequest) {
   await prisma.journalEntry.delete({ where: { id } });
   return NextResponse.json({ success: true });
 }
+
+export const GET = withErrorHandler(handleGet);
+export const POST = withErrorHandler(handlePost);
+export const PUT = withErrorHandler(handlePut);
+export const DELETE = withErrorHandler(handleDelete);
