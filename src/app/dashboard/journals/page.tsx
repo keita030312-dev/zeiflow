@@ -33,6 +33,7 @@ import { toast } from "sonner";
 import { format } from "date-fns";
 import { ja } from "date-fns/locale";
 import { STD_ACCOUNTS } from "@/lib/accounts";
+import { TAX_CATEGORY_OPTIONS } from "@/lib/tax-categories";
 
 interface JournalEntry {
   id: string;
@@ -55,24 +56,6 @@ interface Client {
   code: string;
   name: string;
 }
-
-// 仕入側+売上側の詳細税区分
-const TAX_CATEGORY_OPTIONS = [
-  { value: "", label: "対象外" },
-  { value: "課対仕入内10%", label: "課対仕入内10%（仕入・内税10%）" },
-  { value: "課対仕入外10%", label: "課対仕入外10%（仕入・外税10%）" },
-  { value: "課対仕入内軽減8%", label: "課対仕入内軽減8%（仕入・内税・軽減）" },
-  { value: "課対仕入外軽減8%", label: "課対仕入外軽減8%（仕入・外税・軽減）" },
-  { value: "課対仕入内8%", label: "課対仕入内8%（仕入・内税・旧税率）" },
-  { value: "課対仕入外8%", label: "課対仕入外8%（仕入・外税・旧税率）" },
-  { value: "課対仕入内5%", label: "課対仕入内5%（仕入・内税・旧税率）" },
-  { value: "非課税仕入", label: "非課税仕入" },
-  { value: "課税売上内10%", label: "課税売上内10%（売上・内税10%）" },
-  { value: "課税売上外10%", label: "課税売上外10%（売上・外税10%）" },
-  { value: "課税売上内軽減8%", label: "課税売上内軽減8%（売上・内税・軽減）" },
-  { value: "課税売上外軽減8%", label: "課税売上外軽減8%（売上・外税・軽減）" },
-  { value: "非課税売上", label: "非課税売上" },
-];
 
 interface BatchEditRow {
   id: string;
