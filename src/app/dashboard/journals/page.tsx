@@ -32,6 +32,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { ja } from "date-fns/locale";
+import { STD_ACCOUNTS } from "@/lib/accounts";
 
 interface JournalEntry {
   id: string;
@@ -54,15 +55,6 @@ interface Client {
   code: string;
   name: string;
 }
-
-const STD_ACCOUNTS = [
-  "現金", "当座預金", "普通預金", "売掛金", "商品", "前払費用", "建物", "車両運搬具", "備品",
-  "買掛金", "未払金", "未払費用", "預り金", "借入金",
-  "売上高", "受取利息", "雑収入",
-  "仕入高", "給料手当", "法定福利費", "旅費交通費", "通信費", "消耗品費", "水道光熱費",
-  "地代家賃", "保険料", "修繕費", "広告宣伝費", "接待交際費", "会議費", "租税公課",
-  "減価償却費", "支払手数料", "雑費", "新聞図書費", "外注費", "福利厚生費", "荷造運賃", "車両費", "リース料",
-];
 
 // 仕入側+売上側の詳細税区分
 const TAX_CATEGORY_OPTIONS = [
