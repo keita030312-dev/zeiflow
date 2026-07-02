@@ -6,8 +6,7 @@ import { preprocessForOcr } from "@/lib/image-preprocess";
 import { reportError } from "@/lib/error-reporter";
 import { parseDocumentKind } from "@/lib/document-kind";
 import { isLikelyMissingSchemaColumn } from "@/lib/prisma-errors";
-import { parseJournalEntryDate } from "@/lib/ocr-result-normalize";
-import { MAX_UPLOAD_BYTES, ALLOWED_IMAGE_TYPES } from "@/lib/upload-limits";
+import { buildJournalCreateData, validateUploadedImage } from "@/lib/receipt-journal";
 
 export async function GET(req: NextRequest) {
   const auth = await requireAuth(req);
@@ -109,18 +108,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "顧客が見つかりません" }, { status: 404 });
     }
 
-    if (!ALLOWED_IMAGE_TYPES.has(file.type)) {
-      return NextResponse.json(
-        { error: "対応していない画像形式です。JPG / PNG / WEBP / GIF を選択してください。" },
-        { status: 400 }
-      );
-    }
-    if (file.size > MAX_UPLOAD_BYTES) {
-      return NextResponse.json(
-        { error: "画像サイズが大きすぎます。10MB以下の画像を選択してください。" },
-        { status: 400 }
-      );
-    }
+    const fileError = validateUploadedImage(file);
+    if (fileError) return NextResponse.json({ error: fileError }, { status: 400 });
 
     const bytes = await file.arrayBuffer();
     const buffer = Buffer.from(bytes);
@@ -185,23 +174,13 @@ export async function POST(req: NextRequest) {
     // Create journal entries for all receipts in the image
     const journalEntries = [];
     for (const result of results) {
-      const tr = result.classification.taxRate;
       const journalEntry = await prisma.journalEntry.create({
-        data: {
-          date: parseJournalEntryDate(result.ocr.date),
-          debitAccount: result.classification.debitAccount,
-          creditAccount: result.classification.creditAccount,
-          amount: result.classification.amount,
-          taxAmount: result.classification.taxAmount ?? null,
-          taxRate:
-            typeof tr === "number" && Number.isFinite(tr) ? tr : null,
-          description: result.classification.description,
-          invoiceNumber: result.ocr.invoiceNumber || null,
+        data: buildJournalCreateData(result, {
           clientId,
           userId: auth.id,
-          ...(auth.orgId ? { organizationId: auth.orgId } : {}),
+          organizationId: auth.orgId,
           receiptId: receipt.id,
-        },
+        }),
       });
       journalEntries.push(journalEntry);
     }
