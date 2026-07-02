@@ -78,14 +78,14 @@ export function generateYayoiCsv(
       String(entry.amount),
       String(entry.taxAmount || ""),
       description,
-      "",
-      "",
-      "",
-      "",
-      memo,
-      "",
-      "",
-      "",
+      "",       // 番号 (R列, index 17)
+      "",       // 期日 (S列, index 18)
+      "0",      // タイプ (T列, index 19): 通常仕訳
+      "",       // 生成元 (U列, index 20)
+      memo,     // 仕訳メモ (V列, index 21)
+      "",       // 付箋1 (W列, index 22)
+      "",       // 付箋2 (X列, index 23)
+      "0",      // 調整 (Y列, index 24)
     ].join(",");
   });
 

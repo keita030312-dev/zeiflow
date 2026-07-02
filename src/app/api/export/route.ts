@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import iconv from "iconv-lite";
 import { requireAuth, getScope } from "@/lib/auth-middleware";
 import { generateYayoiCsv } from "@/lib/csv/yayoi";
 import { generateMoneyForwardCsv } from "@/lib/csv/moneyforward";
@@ -170,16 +171,23 @@ export async function POST(req: NextRequest) {
       // エクスポートログの保存失敗はCSV出力を止めない
     }
 
-    // Return CSV as a downloadable file with BOM for Excel compatibility
-    const bom = "\uFEFF";
-    return new NextResponse(bom + csv, {
-      headers: {
-        "Content-Type": "text/csv; charset=utf-8",
-        "Content-Disposition": `attachment; filename="${filename}"`,
-        "X-Format": format,
-        "X-Record-Count": entries.length.toString(),
-        "Access-Control-Expose-Headers": "Content-Disposition, X-Format, X-Record-Count",
-      },
+    const commonHeaders = {
+      "Content-Disposition": `attachment; filename="${filename}"`,
+      "X-Format": format,
+      "X-Record-Count": entries.length.toString(),
+      "Access-Control-Expose-Headers": "Content-Disposition, X-Format, X-Record-Count",
+    };
+    // \u5F25\u751F\u4F1A\u8A08\u306FShift-JIS\u5FC5\u9808\u3002MoneyForward/freee\u306FUTF-8 with BOM\u3002
+    if (format === "yayoi") {
+      const encoded = iconv.encode(csv, "Shift_JIS");
+      // new Uint8Array(encoded) でプールから切り離した独立 ArrayBuffer を作る
+      const safeBuffer = new Uint8Array(encoded).buffer as ArrayBuffer;
+      return new NextResponse(safeBuffer, {
+        headers: { "Content-Type": "text/csv; charset=Shift_JIS", ...commonHeaders },
+      });
+    }
+    return new NextResponse("\uFEFF" + csv, {
+      headers: { "Content-Type": "text/csv; charset=utf-8", ...commonHeaders },
     });
   } catch (error) {
     console.error("Export error:", error);
