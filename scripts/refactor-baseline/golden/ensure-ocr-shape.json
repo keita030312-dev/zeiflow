@@ -1,0 +1,84 @@
+{
+  "ok_full": {
+    "ocr": {
+      "storeName": "セブンイレブン",
+      "date": "2026-04-15",
+      "items": [
+        {
+          "name": "おにぎり",
+          "amount": 110,
+          "taxRate": 0.08
+        }
+      ],
+      "total": 260,
+      "taxTotal": 19,
+      "paymentMethod": "現金",
+      "rawText": "raw",
+      "fieldConfidence": {
+        "storeName": 0.98,
+        "date": 0,
+        "total": 1
+      },
+      "invoiceNumber": "T1234567890123"
+    },
+    "classification": {
+      "debitAccount": "福利厚生費",
+      "creditAccount": "現金",
+      "amount": 260,
+      "taxAmount": 19,
+      "taxRate": 0.08,
+      "description": "セブンイレブン 飲食代",
+      "confidence": 0.95
+    }
+  },
+  "broken_types": {
+    "ocr": {
+      "storeName": "（名称未取得）",
+      "date": "2026-01-05",
+      "items": [
+        {
+          "name": "合計",
+          "amount": 0,
+          "taxRate": 0.1
+        }
+      ],
+      "total": 1234,
+      "paymentMethod": "不明",
+      "rawText": "42",
+      "invoiceNumber": "123"
+    },
+    "classification": {
+      "debitAccount": "雑費",
+      "creditAccount": "現金",
+      "amount": 1234,
+      "taxRate": 0.1,
+      "description": "（名称未取得） 取引",
+      "confidence": 1
+    }
+  },
+  "minimal": {
+    "ocr": {
+      "storeName": "（名称未取得）",
+      "date": "2026-02-01",
+      "items": [
+        {
+          "name": "合計",
+          "amount": 1,
+          "taxRate": 0.1
+        }
+      ],
+      "total": 1,
+      "paymentMethod": "不明",
+      "rawText": "",
+      "invoiceNumber": null
+    },
+    "classification": {
+      "debitAccount": "雑費",
+      "creditAccount": "現金",
+      "amount": 1,
+      "taxRate": 0.1,
+      "description": "（名称未取得） 取引",
+      "confidence": 0.5
+    }
+  }
+}
