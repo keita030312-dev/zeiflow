@@ -1,5 +1,6 @@
 import type { JournalEntryData, ClientTaxInfo } from "@/types";
 import { deriveTaxCategory, REVENUE_ACCOUNTS } from "@/lib/tax-categories";
+import { csvEscape } from "@/lib/csv/csv-escape";
 import { format } from "date-fns";
 
 // freee形式の税区分文字列に変換
@@ -101,13 +102,4 @@ export function generateFreeeCsv(
   });
 
   return [header, ...rows].join("\r\n");
-}
-
-function csvEscape(value: string): string {
-  const cleaned = value.replace(/[\r\n]+/g, " ").trim();
-  const safe = /^[=+\-@\t]/.test(cleaned) ? `'${cleaned}` : cleaned;
-  if (safe.includes(",") || safe.includes('"')) {
-    return `"${safe.replace(/"/g, '""')}"`;
-  }
-  return safe;
 }
