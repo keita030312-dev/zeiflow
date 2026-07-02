@@ -8,9 +8,7 @@ import { reportError } from "@/lib/error-reporter";
 import { parseDocumentKind } from "@/lib/document-kind";
 import { isLikelyMissingSchemaColumn } from "@/lib/prisma-errors";
 import { parseJournalEntryDate } from "@/lib/ocr-result-normalize";
-
-const MAX_UPLOAD_BYTES = 10 * 1024 * 1024; // 10MB
-const ALLOWED_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
+import { MAX_UPLOAD_BYTES, ALLOWED_IMAGE_TYPES } from "@/lib/upload-limits";
 
 export async function POST(req: NextRequest) {
   const ip = getClientIp(req);

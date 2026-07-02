@@ -28,6 +28,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { compressImage } from "@/lib/image-compress";
+import { MAX_UPLOAD_BYTES, ALLOWED_IMAGE_TYPES } from "@/lib/upload-limits";
 
 const STD_ACCOUNTS = [
   "現金", "当座預金", "普通預金", "売掛金", "商品", "前払費用", "建物", "車両運搬具", "備品",
@@ -160,9 +161,6 @@ interface ReceiptRecord {
     isConfirmed: boolean;
   }[];
 }
-
-const MAX_UPLOAD_BYTES = 10 * 1024 * 1024; // 10MB
-const ALLOWED_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
 
 export default function ReceiptsPage() {
   const [clients, setClients] = useState<Client[]>([]);
