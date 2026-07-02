@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { compare } from "bcryptjs";
-import { sign } from "jsonwebtoken";
 import { prisma } from "@/lib/db";
-import { cookies } from "next/headers";
 import { checkOrgGate } from "@/lib/auth-org-gate";
+import { issueSessionCookie } from "@/lib/session-token";
 
 export async function POST(req: NextRequest) {
   try {
@@ -53,25 +52,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const tokenPayload: Record<string, unknown> = { id: user.id, email: user.email, role: user.role };
-    if (user.organizationId) {
-      tokenPayload.orgId = user.organizationId;
-    }
-
-    const token = sign(
-      tokenPayload,
-      process.env.NEXTAUTH_SECRET!,
-      { expiresIn: "8h" }
-    );
-
-    const cookieStore = await cookies();
-    cookieStore.set("token", token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production" || !!process.env.VERCEL,
-      sameSite: "lax",
-      maxAge: 8 * 60 * 60,
-      path: "/",
-    });
+    await issueSessionCookie(user);
 
     await prisma.auditLog.create({
       data: {
