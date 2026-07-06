@@ -1110,44 +1110,44 @@ export default function JournalsPage() {
                             <td className="px-2 py-2"></td>
                             <td className="px-4 py-2">
                               <input type="date" value={editForm.date} onChange={(e) => setEditForm({ ...editForm, date: e.target.value })}
-                                className="w-full bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.15)] rounded px-2 py-1 text-xs text-[#F1F5F9]" />
+                                className="w-full min-w-[120px] bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.15)] rounded px-2 py-1 text-xs text-[#F1F5F9]" />
                             </td>
                             <td className="px-4 py-2">
                               <select value={editForm.debitAccount} onChange={(e) => setEditForm({ ...editForm, debitAccount: e.target.value })}
-                                className="w-full bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.15)] rounded px-2 py-1 text-xs text-[#F1F5F9]">
+                                className="w-full min-w-[105px] bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.15)] rounded px-2 py-1 text-xs text-[#F1F5F9]">
                                 {[...STD_ACCOUNTS, ...customAccounts].map((a) => <option key={a} value={a}>{a}</option>)}
                               </select>
                             </td>
                             <td className="px-2 py-2">
                               <select value={editForm.debitTaxCategory} onChange={(e) => setEditForm({ ...editForm, debitTaxCategory: e.target.value })}
-                                className="w-full bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.15)] rounded px-1 py-1 text-xs text-[#F1F5F9]">
+                                className="w-full min-w-[135px] bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.15)] rounded px-1 py-1 text-xs text-[#F1F5F9]">
                                 {TAX_CATEGORY_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.value || "対象外"}</option>)}
                               </select>
                             </td>
                             <td className="px-4 py-2">
                               <select value={editForm.creditAccount} onChange={(e) => setEditForm({ ...editForm, creditAccount: e.target.value })}
-                                className="w-full bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.15)] rounded px-2 py-1 text-xs text-[#F1F5F9]">
+                                className="w-full min-w-[105px] bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.15)] rounded px-2 py-1 text-xs text-[#F1F5F9]">
                                 {[...STD_ACCOUNTS, ...customAccounts].map((a) => <option key={a} value={a}>{a}</option>)}
                               </select>
                             </td>
                             <td className="px-2 py-2">
                               <select value={editForm.creditTaxCategory} onChange={(e) => setEditForm({ ...editForm, creditTaxCategory: e.target.value })}
-                                className="w-full bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.15)] rounded px-1 py-1 text-xs text-[#F1F5F9]">
+                                className="w-full min-w-[135px] bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.15)] rounded px-1 py-1 text-xs text-[#F1F5F9]">
                                 {TAX_CATEGORY_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.value || "対象外"}</option>)}
                               </select>
                             </td>
                             <td className="px-4 py-2">
                               <input type="number" value={editForm.amount} onChange={(e) => setEditForm({ ...editForm, amount: Number(e.target.value) })}
-                                className="w-full bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.15)] rounded px-2 py-1 text-xs text-[#F1F5F9] text-right" />
+                                className="w-full min-w-[90px] bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.15)] rounded px-2 py-1 text-xs text-[#F1F5F9] text-right" />
                             </td>
                             <td className="px-4 py-2">
                               <input type="text" value={editForm.description} onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
-                                className="w-full bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.15)] rounded px-2 py-1 text-xs text-[#F1F5F9]" />
+                                className="w-full min-w-[160px] bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.15)] rounded px-2 py-1 text-xs text-[#F1F5F9]" />
                             </td>
                             <td className="px-4 py-2">
                               <input type="text" value={editForm.invoiceNumber} onChange={(e) => setEditForm({ ...editForm, invoiceNumber: e.target.value })}
                                 placeholder="T0000000000000"
-                                className="w-full bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.15)] rounded px-2 py-1 text-xs text-[#F1F5F9]" />
+                                className="w-full min-w-[130px] bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.15)] rounded px-2 py-1 text-xs text-[#F1F5F9]" />
                             </td>
                             <td className="px-4 py-2">
                               <Badge variant="secondary" className="bg-[rgba(212,175,55,0.05)] text-[#94A3B8] border-none text-[10px]">
