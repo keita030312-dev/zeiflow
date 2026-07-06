@@ -30,13 +30,18 @@ import { toast } from "sonner";
 import { compressImage } from "@/lib/image-compress";
 import { MAX_UPLOAD_BYTES, ALLOWED_IMAGE_TYPES } from "@/lib/upload-limits";
 import { STD_ACCOUNTS } from "@/lib/accounts";
-import { TAX_CATEGORY_OPTIONS, splitLegacyTaxCategory } from "@/lib/tax-categories";
+import {
+  TAX_CATEGORY_OPTIONS,
+  splitLegacyTaxCategory,
+  type AccountingMethod,
+} from "@/lib/tax-categories";
 import { ConfidenceBadge } from "@/components/confidence-badge";
 
 interface Client {
   id: string;
   code: string;
   name: string;
+  accountingMethod?: "TAX_INCLUSIVE" | "TAX_EXCLUSIVE";
 }
 
 interface ReceiptResult {
@@ -108,6 +113,7 @@ interface ReceiptRecord {
   client: { name: string; code: string };
   journalEntries: {
     id: string;
+    clientId?: string;
     date: string;
     debitAccount: string;
     creditAccount: string;
@@ -331,6 +337,12 @@ export default function ReceiptsPage() {
 
   const [uploadQuality, setUploadQuality] = useState<"fast" | "accurate" | "ultra">("accurate");
 
+  function methodOfClient(clientId: string | undefined): AccountingMethod {
+    return (
+      clients.find((c) => c.id === clientId)?.accountingMethod || "TAX_INCLUSIVE"
+    );
+  }
+
   function rowsFromResult(data: ReceiptResult): BatchJournalRow[] {
     const results = data.allResults?.length
       ? data.allResults
@@ -345,20 +357,23 @@ export default function ReceiptsPage() {
       const extracted = results[index];
       if (!extracted) return [];
       // OCR結果(単一taxRate)を借方/貸方税区分にプレフィル。
-      // 内税(TAX_INCLUSIVE)前提の近似値で、税理士が確認して保存する
+      // 顧客の経理方式(税込/税抜)に合わせた近似値で、税理士が確認して保存する
       const je = entry as {
         id: string;
         taxCategory?: string | null;
         debitTaxCategory?: string | null;
         creditTaxCategory?: string | null;
       };
-      const cats = splitLegacyTaxCategory({
-        debitTaxCategory: je.debitTaxCategory,
-        creditTaxCategory: je.creditTaxCategory,
-        taxCategory: je.taxCategory,
-        taxRate: extracted.classification.taxRate,
-        creditAccount: extracted.classification.creditAccount,
-      });
+      const cats = splitLegacyTaxCategory(
+        {
+          debitTaxCategory: je.debitTaxCategory,
+          creditTaxCategory: je.creditTaxCategory,
+          taxCategory: je.taxCategory,
+          taxRate: extracted.classification.taxRate,
+          creditAccount: extracted.classification.creditAccount,
+        },
+        methodOfClient(selectedClient),
+      );
       return [{
         id: entry.id,
         date: extracted.ocr.date,
@@ -536,7 +551,7 @@ export default function ReceiptsPage() {
     const je = receipt.journalEntries[0];
     if (!je) return;
     setEditingReceiptId(receipt.id);
-    const cats = splitLegacyTaxCategory(je);
+    const cats = splitLegacyTaxCategory(je, methodOfClient(je.clientId));
     setEditForm({
       date: je.date,
       debitAccount: je.debitAccount,
