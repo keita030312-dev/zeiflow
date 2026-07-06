@@ -30,7 +30,7 @@ import { toast } from "sonner";
 import { compressImage } from "@/lib/image-compress";
 import { MAX_UPLOAD_BYTES, ALLOWED_IMAGE_TYPES } from "@/lib/upload-limits";
 import { STD_ACCOUNTS } from "@/lib/accounts";
-import { TAX_CATEGORY_OPTIONS } from "@/lib/tax-categories";
+import { TAX_CATEGORY_OPTIONS, splitLegacyTaxCategory } from "@/lib/tax-categories";
 import { ConfidenceBadge } from "@/components/confidence-badge";
 
 interface Client {
@@ -79,6 +79,8 @@ interface ReceiptResult {
   journalEntries?: {
     id: string;
     taxCategory?: string | null;
+    debitTaxCategory?: string | null;
+    creditTaxCategory?: string | null;
   }[];
 }
 
@@ -88,8 +90,8 @@ interface BatchJournalRow {
   debitAccount: string;
   creditAccount: string;
   amount: number;
-  taxRate: string;
-  taxCategory: string;
+  debitTaxCategory: string;
+  creditTaxCategory: string;
   description: string;
   invoiceNumber: string;
   memo: string;
@@ -111,7 +113,10 @@ interface ReceiptRecord {
     creditAccount: string;
     amount: number;
     taxAmount?: number;
+    taxRate?: number | null;
     taxCategory?: string | null;
+    debitTaxCategory?: string | null;
+    creditTaxCategory?: string | null;
     description: string;
     invoiceNumber?: string;
     memo?: string;
@@ -166,7 +171,8 @@ export default function ReceiptsPage() {
     debitAccount: "",
     creditAccount: "",
     amount: 0,
-    taxCategory: "",
+    debitTaxCategory: "",
+    creditTaxCategory: "",
     description: "",
     invoiceNumber: "",
     memo: "",
@@ -338,17 +344,29 @@ export default function ReceiptsPage() {
     return entries.flatMap((entry, index) => {
       const extracted = results[index];
       if (!extracted) return [];
+      // OCR結果(単一taxRate)を借方/貸方税区分にプレフィル。
+      // 内税(TAX_INCLUSIVE)前提の近似値で、税理士が確認して保存する
+      const je = entry as {
+        id: string;
+        taxCategory?: string | null;
+        debitTaxCategory?: string | null;
+        creditTaxCategory?: string | null;
+      };
+      const cats = splitLegacyTaxCategory({
+        debitTaxCategory: je.debitTaxCategory,
+        creditTaxCategory: je.creditTaxCategory,
+        taxCategory: je.taxCategory,
+        taxRate: extracted.classification.taxRate,
+        creditAccount: extracted.classification.creditAccount,
+      });
       return [{
         id: entry.id,
         date: extracted.ocr.date,
         debitAccount: extracted.classification.debitAccount,
         creditAccount: extracted.classification.creditAccount,
         amount: extracted.classification.amount,
-        taxRate:
-          extracted.classification.taxRate == null
-            ? ""
-            : String(extracted.classification.taxRate),
-        taxCategory: "",
+        debitTaxCategory: cats.debit,
+        creditTaxCategory: cats.credit,
         description: extracted.classification.description,
         invoiceNumber: extracted.ocr.invoiceNumber || "",
         memo: "",
@@ -518,12 +536,14 @@ export default function ReceiptsPage() {
     const je = receipt.journalEntries[0];
     if (!je) return;
     setEditingReceiptId(receipt.id);
+    const cats = splitLegacyTaxCategory(je);
     setEditForm({
       date: je.date,
       debitAccount: je.debitAccount,
       creditAccount: je.creditAccount,
       amount: je.amount,
-      taxCategory: je.taxCategory || "",
+      debitTaxCategory: cats.debit,
+      creditTaxCategory: cats.credit,
       description: je.description,
       invoiceNumber: je.invoiceNumber || "",
       memo: je.memo || "",
@@ -541,7 +561,8 @@ export default function ReceiptsPage() {
           debitAccount: editForm.debitAccount,
           creditAccount: editForm.creditAccount,
           amount: editForm.amount,
-          taxCategory: editForm.taxCategory || null,
+          debitTaxCategory: editForm.debitTaxCategory || null,
+          creditTaxCategory: editForm.creditTaxCategory || null,
           description: editForm.description,
           memo: editForm.memo || undefined,
           invoiceNumber: editForm.invoiceNumber || undefined,
@@ -655,8 +676,8 @@ export default function ReceiptsPage() {
             debitAccount: row.debitAccount,
             creditAccount: row.creditAccount,
             amount: row.amount,
-            taxRate: row.taxRate === "" ? null : Number(row.taxRate),
-            taxCategory: row.taxCategory || null,
+            debitTaxCategory: row.debitTaxCategory || null,
+            creditTaxCategory: row.creditTaxCategory || null,
             description: row.description,
             invoiceNumber: row.invoiceNumber || null,
             memo: row.memo || null,
@@ -974,10 +995,10 @@ export default function ReceiptsPage() {
                           <tr className="border-b border-[rgba(212,175,55,0.12)]">
                             <th className="px-2 py-2 text-left text-[10px] text-[#64748B]">日付</th>
                             <th className="px-2 py-2 text-left text-[10px] text-[#64748B]">借方</th>
+                            <th className="px-2 py-2 text-left text-[10px] text-[#64748B]">借方税区分</th>
                             <th className="px-2 py-2 text-left text-[10px] text-[#64748B]">貸方</th>
+                            <th className="px-2 py-2 text-left text-[10px] text-[#64748B]">貸方税区分</th>
                             <th className="px-2 py-2 text-right text-[10px] text-[#64748B]">金額</th>
-                            <th className="px-2 py-2 text-left text-[10px] text-[#64748B]">税率</th>
-                            <th className="px-2 py-2 text-left text-[10px] text-[#64748B]">税区分</th>
                             <th className="px-2 py-2 text-left text-[10px] text-[#64748B]">摘要</th>
                             <th className="px-2 py-2 text-left text-[10px] text-[#64748B]">登録番号</th>
                             <th className="px-2 py-2 text-left text-[10px] text-[#64748B]">メモ</th>
@@ -1010,6 +1031,15 @@ export default function ReceiptsPage() {
                               </td>
                               <td className="p-1.5">
                                 <select
+                                  value={row.debitTaxCategory}
+                                  onChange={(e) => updateBatchRow(row.id, "debitTaxCategory", e.target.value)}
+                                  className="w-[160px] rounded bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.12)] px-2 py-1.5 text-xs text-[#F1F5F9]"
+                                >
+                                  {TAX_CATEGORY_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.value || "対象外"}</option>)}
+                                </select>
+                              </td>
+                              <td className="p-1.5">
+                                <select
                                   value={row.creditAccount}
                                   onChange={(e) => updateBatchRow(row.id, "creditAccount", e.target.value)}
                                   className="w-[125px] rounded bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.12)] px-2 py-1.5 text-xs text-[#F1F5F9]"
@@ -1020,6 +1050,15 @@ export default function ReceiptsPage() {
                                 </select>
                               </td>
                               <td className="p-1.5">
+                                <select
+                                  value={row.creditTaxCategory}
+                                  onChange={(e) => updateBatchRow(row.id, "creditTaxCategory", e.target.value)}
+                                  className="w-[160px] rounded bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.12)] px-2 py-1.5 text-xs text-[#F1F5F9]"
+                                >
+                                  {TAX_CATEGORY_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.value || "対象外"}</option>)}
+                                </select>
+                              </td>
+                              <td className="p-1.5">
                                 <input
                                   type="number"
                                   min={1}
@@ -1027,26 +1066,6 @@ export default function ReceiptsPage() {
                                   onChange={(e) => updateBatchRow(row.id, "amount", Number(e.target.value))}
                                   className="w-[105px] rounded bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.12)] px-2 py-1.5 text-right text-xs text-[#F1F5F9]"
                                 />
-                              </td>
-                              <td className="p-1.5">
-                                <select
-                                  value={row.taxRate}
-                                  onChange={(e) => updateBatchRow(row.id, "taxRate", e.target.value)}
-                                  className="w-[80px] rounded bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.12)] px-2 py-1.5 text-xs text-[#F1F5F9]"
-                                >
-                                  <option value="">対象外</option>
-                                  <option value="0.1">10%</option>
-                                  <option value="0.08">8%</option>
-                                </select>
-                              </td>
-                              <td className="p-1.5">
-                                <select
-                                  value={row.taxCategory}
-                                  onChange={(e) => updateBatchRow(row.id, "taxCategory", e.target.value)}
-                                  className="w-[160px] rounded bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.12)] px-2 py-1.5 text-xs text-[#F1F5F9]"
-                                >
-                                  {TAX_CATEGORY_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.value || "対象外"}</option>)}
-                                </select>
                               </td>
                               <td className="p-1.5">
                                 <input
@@ -1559,8 +1578,15 @@ export default function ReceiptsPage() {
                               className="w-full rounded-md bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.12)] text-[#F1F5F9] text-sm px-2 py-1.5" />
                           </div>
                           <div className="space-y-1">
-                            <label className="text-xs text-[#94A3B8]">税区分</label>
-                            <select value={editForm.taxCategory} onChange={(e) => setEditForm({ ...editForm, taxCategory: e.target.value })}
+                            <label className="text-xs text-[#94A3B8]">借方税区分</label>
+                            <select value={editForm.debitTaxCategory} onChange={(e) => setEditForm({ ...editForm, debitTaxCategory: e.target.value })}
+                              className="w-full rounded-md bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.12)] text-[#F1F5F9] text-sm px-2 py-1.5">
+                              {TAX_CATEGORY_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.value || "対象外"}</option>)}
+                            </select>
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-xs text-[#94A3B8]">貸方税区分</label>
+                            <select value={editForm.creditTaxCategory} onChange={(e) => setEditForm({ ...editForm, creditTaxCategory: e.target.value })}
                               className="w-full rounded-md bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.12)] text-[#F1F5F9] text-sm px-2 py-1.5">
                               {TAX_CATEGORY_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.value || "対象外"}</option>)}
                             </select>

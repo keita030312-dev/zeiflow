@@ -117,6 +117,8 @@ export async function POST(req: NextRequest) {
       taxAmount: e.taxAmount || undefined,
       taxRate: e.taxRate || undefined,
       taxCategory: e.taxCategory || undefined,
+      debitTaxCategory: e.debitTaxCategory || undefined,
+      creditTaxCategory: e.creditTaxCategory || undefined,
       description: e.description,
       invoiceNumber: e.invoiceNumber || undefined,
       memo: e.memo || undefined,

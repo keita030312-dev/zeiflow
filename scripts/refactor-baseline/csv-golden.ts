@@ -33,6 +33,16 @@ const entries: JournalEntryData[] = [
   { id: "j6", date: "2026-04-20T00:00:00", debitAccount: "雑費", creditAccount: "現金",
     amount: 100, taxAmount: 9, taxRate: 0.1, description: "=SUM(A1) 危険摘要テスト",
     isConfirmed: true, clientId: "c1" },
+  // ---- 借方/貸方 分離税区分（2026-07-07 追加）----
+  { id: "j7", date: "2026-04-21T00:00:00", debitAccount: "会議費", creditAccount: "現金",
+    amount: 2200, taxAmount: 200, taxRate: 0.1, debitTaxCategory: "課対仕入内10%",
+    description: "分離税区分 経費", isConfirmed: true, clientId: "c1" },
+  { id: "j8", date: "2026-04-22T00:00:00", debitAccount: "普通預金", creditAccount: "売上高",
+    amount: 5500, taxAmount: 500, taxRate: 0.1, creditTaxCategory: "課税売上内10%",
+    description: "分離税区分 売上", isConfirmed: true, clientId: "c1" },
+  { id: "j9", date: "2026-04-23T00:00:00", debitAccount: "旅費交通費", creditAccount: "現金",
+    amount: 990, taxAmount: 90, taxRate: 0.1, debitTaxCategory: "課対仕入外10%",
+    creditTaxCategory: "", description: "分離税区分 外税", isConfirmed: true, clientId: "c1" },
 ];
 
 const inclusive: ClientTaxInfo = { accountingMethod: "TAX_INCLUSIVE", taxType: "STANDARD" };
@@ -82,6 +92,27 @@ const fail = (msg: string) => { failed++; console.error("FAIL:", msg); };
 {
   // CSVインジェクション対策: 先頭 = の摘要は ' 付与でエスケープされる
   if (!outputs["freee_inclusive.csv"].includes("'=SUM(A1)")) fail("freee CSVインジェクション対策が消えた");
+}
+{
+  // 借方/貸方 分離税区分: 指定した側にだけ税区分が出る
+  const yayoiRows = outputs["yayoi_inclusive.csv"].split("\r\n");
+  const j7 = yayoiRows.find((r) => r.includes("分離税区分 経費"));
+  if (!j7 || !j7.includes("課対仕入内10%,2200") || !j7.includes(",対象外,2200"))
+    fail(`弥生 j7 借方税区分/貸方対象外が想定と違う: ${j7}`);
+  const j8 = yayoiRows.find((r) => r.includes("分離税区分 売上"));
+  if (!j8 || !j8.includes("対象外,5500") || !j8.includes("課税売上内10%,5500"))
+    fail(`弥生 j8 貸方税区分/借方対象外が想定と違う: ${j8}`);
+  // MF: 借方側に変換済みラベル、貸方は対象外
+  const mfJ7 = outputs["mf_inclusive.csv"].split("\r\n").find((r) => r.includes("分離税区分 経費"));
+  if (!mfJ7 || !mfJ7.includes("課税仕入 10%(税込),2200") || !mfJ7.includes("対象外,2200"))
+    fail(`MF j7 借方/貸方の振り分けが想定と違う: ${mfJ7}`);
+  // freee: 支出は借方側の税区分を採用（内/外表記は既存どおり顧客の経理方式に従う）
+  const freeeJ9 = outputs["freee_inclusive.csv"].split("\r\n").find((r) => r.includes("分離税区分 外税"));
+  if (!freeeJ9 || !freeeJ9.startsWith("支出") || !freeeJ9.includes("課対仕入(税込)10%,990,内税,90"))
+    fail(`freee j9 支出行の税区分が想定と違う: ${freeeJ9}`);
+  const freeeJ8 = outputs["freee_inclusive.csv"].split("\r\n").find((r) => r.includes("分離税区分 売上"));
+  if (!freeeJ8 || !freeeJ8.startsWith("収入") || !freeeJ8.includes("課税売上10%,5500,内税,500"))
+    fail(`freee j8 収入行の税区分が想定と違う: ${freeeJ8}`);
 }
 
 // ---- ゴールデン比較 ----

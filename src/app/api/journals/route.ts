@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import { requireAuth, getScope } from "@/lib/auth-middleware";
 import { recordOcrCorrection } from "@/lib/ai/learning";
 import { withErrorHandler } from "@/lib/api-handler";
+import { deriveTaxRateFromCategories } from "@/lib/tax-categories";
 import { z } from "zod";
 
 const journalSchema = z.object({
@@ -15,6 +16,8 @@ const journalSchema = z.object({
   taxAmount: z.number().optional(),
   taxRate: z.number().optional(),
   taxCategory: z.string().optional(),
+  debitTaxCategory: z.string().optional(),
+  creditTaxCategory: z.string().optional(),
   description: z.string().min(1),
   memo: z.string().optional(),
   invoiceNumber: z.string().optional(),
@@ -33,6 +36,8 @@ const journalUpdateSchema = z.object({
   taxAmount: z.number().nullable().optional(),
   taxRate: z.number().nullable().optional(),
   taxCategory: z.string().nullable().optional(),
+  debitTaxCategory: z.string().nullable().optional(),
+  creditTaxCategory: z.string().nullable().optional(),
   description: z.string().min(1).optional(),
   memo: z.string().nullable().optional(),
   invoiceNumber: z.string().nullable().optional(),
@@ -94,7 +99,7 @@ async function handleGet(req: NextRequest) {
       where,
       orderBy: { date: "desc" },
       include: {
-        client: { select: { name: true, code: true } },
+        client: { select: { name: true, code: true, accountingMethod: true } },
         receipt: { select: { id: true, imagePath: true } },
       },
       skip: (page - 1) * limit,
@@ -132,16 +137,28 @@ async function handlePost(req: NextRequest) {
   );
   if (ownershipError) return ownershipError;
 
+  // 借方/貸方税区分が指定されていれば税率をサーバー側で導出し、旧taxCategoryは使わない
+  const hasSideCats =
+    parsed.data.debitTaxCategory !== undefined ||
+    parsed.data.creditTaxCategory !== undefined;
+  const effectiveTaxRate = hasSideCats
+    ? deriveTaxRateFromCategories(
+        parsed.data.debitTaxCategory,
+        parsed.data.creditTaxCategory,
+      )
+    : parsed.data.taxRate;
+
   const entry = await prisma.journalEntry.create({
     data: {
       ...parsed.data,
       date: new Date(parsed.data.date),
+      ...(hasSideCats ? { taxRate: effectiveTaxRate, taxCategory: null } : {}),
       taxAmount:
         parsed.data.taxAmount ??
-        (parsed.data.taxRate
+        (effectiveTaxRate
           ? Math.round(
-              (parsed.data.amount * parsed.data.taxRate) /
-                (1 + parsed.data.taxRate),
+              (parsed.data.amount * effectiveTaxRate) /
+                (1 + effectiveTaxRate),
             )
           : undefined),
       userId: auth.id,
@@ -186,6 +203,22 @@ async function handlePut(req: NextRequest) {
     nextReceiptId,
   );
   if (ownershipError) return ownershipError;
+
+  // 借方/貸方税区分が更新に含まれる場合は税率を導出し、旧taxCategoryをクリア
+  // (残すと「対象外に変更したのに旧税区分がCSV出力される」事故になる)
+  const sideCatsTouched =
+    data.debitTaxCategory !== undefined || data.creditTaxCategory !== undefined;
+  if (sideCatsTouched) {
+    data.taxRate = deriveTaxRateFromCategories(
+      data.debitTaxCategory === undefined
+        ? existing.debitTaxCategory
+        : data.debitTaxCategory,
+      data.creditTaxCategory === undefined
+        ? existing.creditTaxCategory
+        : data.creditTaxCategory,
+    );
+    data.taxCategory = null;
+  }
 
   const nextAmount = data.amount ?? existing.amount;
   const nextTaxRate =

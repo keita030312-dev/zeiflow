@@ -33,7 +33,11 @@ import { toast } from "sonner";
 import { format } from "date-fns";
 import { ja } from "date-fns/locale";
 import { STD_ACCOUNTS } from "@/lib/accounts";
-import { TAX_CATEGORY_OPTIONS } from "@/lib/tax-categories";
+import {
+  TAX_CATEGORY_OPTIONS,
+  splitLegacyTaxCategory,
+  type AccountingMethod,
+} from "@/lib/tax-categories";
 
 interface JournalEntry {
   id: string;
@@ -44,11 +48,21 @@ interface JournalEntry {
   taxAmount?: number;
   taxRate?: number;
   taxCategory?: string;
+  debitTaxCategory?: string;
+  creditTaxCategory?: string;
   description: string;
   memo?: string;
   invoiceNumber?: string;
   isConfirmed: boolean;
-  client: { name: string; code: string };
+  client: { name: string; code: string; accountingMethod?: string };
+}
+
+// 旧データ(単一税区分/税率のみ)も借方/貸方に振り分けて表示する
+function entryTaxCats(entry: JournalEntry) {
+  return splitLegacyTaxCategory(
+    entry,
+    (entry.client.accountingMethod as AccountingMethod) || "TAX_INCLUSIVE",
+  );
 }
 
 interface Client {
@@ -64,8 +78,8 @@ interface BatchEditRow {
   debitAccount: string;
   creditAccount: string;
   amount: number;
-  taxRate: string;
-  taxCategory: string;
+  debitTaxCategory: string;
+  creditTaxCategory: string;
   description: string;
   invoiceNumber: string;
   memo: string;
@@ -85,8 +99,8 @@ export default function JournalsPage() {
     debitAccount: "",
     creditAccount: "",
     amount: 0,
-    taxRate: "",
-    taxCategory: "",
+    debitTaxCategory: "",
+    creditTaxCategory: "",
     description: "",
     memo: "",
     invoiceNumber: "",
@@ -108,8 +122,8 @@ export default function JournalsPage() {
     debitAccount: STD_ACCOUNTS[0],
     creditAccount: STD_ACCOUNTS[0],
     amount: 0,
-    taxRate: "",
-    taxCategory: "",
+    debitTaxCategory: "",
+    creditTaxCategory: "",
     description: "",
     invoiceNumber: "",
     memo: "",
@@ -178,13 +192,14 @@ export default function JournalsPage() {
 
   function startEdit(entry: JournalEntry) {
     setEditingId(entry.id);
+    const cats = entryTaxCats(entry);
     setEditForm({
       date: format(new Date(entry.date), "yyyy-MM-dd"),
       debitAccount: entry.debitAccount,
       creditAccount: entry.creditAccount,
       amount: entry.amount,
-      taxRate: entry.taxRate != null ? String(entry.taxRate) : "",
-      taxCategory: entry.taxCategory || "",
+      debitTaxCategory: cats.debit,
+      creditTaxCategory: cats.credit,
       description: entry.description,
       memo: entry.memo || "",
       invoiceNumber: entry.invoiceNumber || "",
@@ -206,8 +221,8 @@ export default function JournalsPage() {
           debitAccount: editForm.debitAccount,
           creditAccount: editForm.creditAccount,
           amount: editForm.amount,
-          taxRate: editForm.taxRate !== "" ? Number(editForm.taxRate) : null,
-          taxCategory: editForm.taxCategory || null,
+          debitTaxCategory: editForm.debitTaxCategory || null,
+          creditTaxCategory: editForm.creditTaxCategory || null,
           description: editForm.description,
           memo: editForm.memo || undefined,
           invoiceNumber: editForm.invoiceNumber || undefined,
@@ -223,7 +238,11 @@ export default function JournalsPage() {
                   debitAccount: editForm.debitAccount,
                   creditAccount: editForm.creditAccount,
                   amount: editForm.amount,
-                  taxRate: editForm.taxRate !== "" ? Number(editForm.taxRate) : undefined,
+                  debitTaxCategory: editForm.debitTaxCategory || undefined,
+                  creditTaxCategory: editForm.creditTaxCategory || undefined,
+                  // サーバー側で旧taxCategoryはクリア・taxRateは再導出される
+                  taxCategory: undefined,
+                  taxRate: undefined,
                   description: editForm.description,
                   memo: editForm.memo,
                   invoiceNumber: editForm.invoiceNumber,
@@ -290,8 +309,8 @@ export default function JournalsPage() {
           debitAccount: newForm.debitAccount,
           creditAccount: newForm.creditAccount,
           amount: newForm.amount,
-          taxRate: newForm.taxRate !== "" ? Number(newForm.taxRate) : undefined,
-          taxCategory: newForm.taxCategory || undefined,
+          debitTaxCategory: newForm.debitTaxCategory || undefined,
+          creditTaxCategory: newForm.creditTaxCategory || undefined,
           description: newForm.description,
           invoiceNumber: newForm.invoiceNumber || undefined,
           memo: newForm.memo || undefined,
@@ -306,8 +325,8 @@ export default function JournalsPage() {
           debitAccount: STD_ACCOUNTS[0],
           creditAccount: STD_ACCOUNTS[0],
           amount: 0,
-          taxRate: "",
-          taxCategory: "",
+          debitTaxCategory: "",
+          creditTaxCategory: "",
           description: "",
           invoiceNumber: "",
           memo: "",
@@ -398,19 +417,22 @@ export default function JournalsPage() {
   function openBatchEdit() {
     const rows = entries
       .filter((entry) => selectedIds.has(entry.id))
-      .map((entry) => ({
-        id: entry.id,
-        clientName: entry.client.name,
-        date: format(new Date(entry.date), "yyyy-MM-dd"),
-        debitAccount: entry.debitAccount,
-        creditAccount: entry.creditAccount,
-        amount: entry.amount,
-        taxRate: entry.taxRate == null ? "" : String(entry.taxRate),
-        taxCategory: entry.taxCategory || "",
-        description: entry.description,
-        invoiceNumber: entry.invoiceNumber || "",
-        memo: entry.memo || "",
-      }));
+      .map((entry) => {
+        const cats = entryTaxCats(entry);
+        return {
+          id: entry.id,
+          clientName: entry.client.name,
+          date: format(new Date(entry.date), "yyyy-MM-dd"),
+          debitAccount: entry.debitAccount,
+          creditAccount: entry.creditAccount,
+          amount: entry.amount,
+          debitTaxCategory: cats.debit,
+          creditTaxCategory: cats.credit,
+          description: entry.description,
+          invoiceNumber: entry.invoiceNumber || "",
+          memo: entry.memo || "",
+        };
+      });
     if (rows.length === 0) {
       toast.info("編集する仕訳を選択してください");
       return;
@@ -461,8 +483,8 @@ export default function JournalsPage() {
             debitAccount: row.debitAccount,
             creditAccount: row.creditAccount,
             amount: row.amount,
-            taxRate: row.taxRate === "" ? null : Number(row.taxRate),
-            taxCategory: row.taxCategory || null,
+            debitTaxCategory: row.debitTaxCategory || null,
+            creditTaxCategory: row.creditTaxCategory || null,
             description: row.description,
             invoiceNumber: row.invoiceNumber || null,
             memo: row.memo || null,
@@ -667,10 +689,24 @@ export default function JournalsPage() {
                 </select>
               </div>
               <div>
+                <label className="block text-xs text-[#64748B] mb-1">借方税区分</label>
+                <select value={newForm.debitTaxCategory} onChange={(e) => setNewForm({ ...newForm, debitTaxCategory: e.target.value })}
+                  className="w-full bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.15)] rounded px-3 py-2 text-sm text-[#F1F5F9]">
+                  {TAX_CATEGORY_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
+              </div>
+              <div>
                 <label className="block text-xs text-[#64748B] mb-1">貸方科目</label>
                 <select value={newForm.creditAccount} onChange={(e) => setNewForm({ ...newForm, creditAccount: e.target.value })}
                   className="w-full bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.15)] rounded px-3 py-2 text-sm text-[#F1F5F9]">
                   {[...STD_ACCOUNTS, ...customAccounts].map((a) => <option key={a} value={a}>{a}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs text-[#64748B] mb-1">貸方税区分</label>
+                <select value={newForm.creditTaxCategory} onChange={(e) => setNewForm({ ...newForm, creditTaxCategory: e.target.value })}
+                  className="w-full bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.15)] rounded px-3 py-2 text-sm text-[#F1F5F9]">
+                  {TAX_CATEGORY_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                 </select>
               </div>
             </div>
@@ -680,22 +716,6 @@ export default function JournalsPage() {
                 <input type="number" value={newForm.amount || ""} onChange={(e) => setNewForm({ ...newForm, amount: Number(e.target.value) })}
                   placeholder="0"
                   className="w-full bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.15)] rounded px-3 py-2 text-sm text-[#F1F5F9]" />
-              </div>
-              <div>
-                <label className="block text-xs text-[#64748B] mb-1">税率</label>
-                <select value={newForm.taxRate} onChange={(e) => setNewForm({ ...newForm, taxRate: e.target.value, taxCategory: "" })}
-                  className="w-full bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.15)] rounded px-3 py-2 text-sm text-[#F1F5F9]">
-                  <option value="">対象外</option>
-                  <option value="0.1">10%</option>
-                  <option value="0.08">8%（軽減）</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs text-[#64748B] mb-1">税区分（詳細）</label>
-                <select value={newForm.taxCategory} onChange={(e) => setNewForm({ ...newForm, taxCategory: e.target.value })}
-                  className="w-full bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.15)] rounded px-3 py-2 text-sm text-[#F1F5F9]">
-                  {TAX_CATEGORY_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                </select>
               </div>
               <div>
                 <label className="block text-xs text-[#64748B] mb-1">摘要</label>
@@ -896,10 +916,10 @@ export default function JournalsPage() {
                     <th className="px-2 py-2 text-left text-[10px] text-[#64748B]">顧客</th>
                     <th className="px-2 py-2 text-left text-[10px] text-[#64748B]">日付</th>
                     <th className="px-2 py-2 text-left text-[10px] text-[#64748B]">借方</th>
+                    <th className="px-2 py-2 text-left text-[10px] text-[#64748B]">借方税区分</th>
                     <th className="px-2 py-2 text-left text-[10px] text-[#64748B]">貸方</th>
+                    <th className="px-2 py-2 text-left text-[10px] text-[#64748B]">貸方税区分</th>
                     <th className="px-2 py-2 text-right text-[10px] text-[#64748B]">金額</th>
-                    <th className="px-2 py-2 text-left text-[10px] text-[#64748B]">税率</th>
-                    <th className="px-2 py-2 text-left text-[10px] text-[#64748B]">税区分</th>
                     <th className="px-2 py-2 text-left text-[10px] text-[#64748B]">摘要</th>
                     <th className="px-2 py-2 text-left text-[10px] text-[#64748B]">登録番号</th>
                     <th className="px-2 py-2 text-left text-[10px] text-[#64748B]">メモ</th>
@@ -937,12 +957,38 @@ export default function JournalsPage() {
                       </td>
                       <td className="p-1.5">
                         <select
+                          value={row.debitTaxCategory}
+                          onChange={(e) => updateBatchEditRow(row.id, "debitTaxCategory", e.target.value)}
+                          className="w-[160px] rounded bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.12)] px-2 py-1.5 text-xs text-[#F1F5F9]"
+                        >
+                          {TAX_CATEGORY_OPTIONS.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.value || "対象外"}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className="p-1.5">
+                        <select
                           value={row.creditAccount}
                           onChange={(e) => updateBatchEditRow(row.id, "creditAccount", e.target.value)}
                           className="w-[125px] rounded bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.12)] px-2 py-1.5 text-xs text-[#F1F5F9]"
                         >
                           {[...STD_ACCOUNTS, ...customAccounts].map((account) => (
                             <option key={account} value={account}>{account}</option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className="p-1.5">
+                        <select
+                          value={row.creditTaxCategory}
+                          onChange={(e) => updateBatchEditRow(row.id, "creditTaxCategory", e.target.value)}
+                          className="w-[160px] rounded bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.12)] px-2 py-1.5 text-xs text-[#F1F5F9]"
+                        >
+                          {TAX_CATEGORY_OPTIONS.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.value || "対象外"}
+                            </option>
                           ))}
                         </select>
                       </td>
@@ -954,33 +1000,6 @@ export default function JournalsPage() {
                           onChange={(e) => updateBatchEditRow(row.id, "amount", Number(e.target.value))}
                           className="w-[105px] rounded bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.12)] px-2 py-1.5 text-right text-xs text-[#F1F5F9]"
                         />
-                      </td>
-                      <td className="p-1.5">
-                        <select
-                          value={row.taxRate}
-                          onChange={(e) => {
-                            updateBatchEditRow(row.id, "taxRate", e.target.value);
-                            updateBatchEditRow(row.id, "taxCategory", "");
-                          }}
-                          className="w-[80px] rounded bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.12)] px-2 py-1.5 text-xs text-[#F1F5F9]"
-                        >
-                          <option value="">対象外</option>
-                          <option value="0.1">10%</option>
-                          <option value="0.08">8%</option>
-                        </select>
-                      </td>
-                      <td className="p-1.5">
-                        <select
-                          value={row.taxCategory}
-                          onChange={(e) => updateBatchEditRow(row.id, "taxCategory", e.target.value)}
-                          className="w-[160px] rounded bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.12)] px-2 py-1.5 text-xs text-[#F1F5F9]"
-                        >
-                          {TAX_CATEGORY_OPTIONS.map((option) => (
-                            <option key={option.value} value={option.value}>
-                              {option.value || "対象外"}
-                            </option>
-                          ))}
-                        </select>
                       </td>
                       <td className="p-1.5">
                         <input
@@ -1073,13 +1092,13 @@ export default function JournalsPage() {
                         </th>
                         <th className="text-left text-[#64748B] text-xs px-4 py-2 w-[90px]">日付</th>
                         <th className="text-left text-[#64748B] text-xs px-4 py-2">借方</th>
+                        <th className="text-left text-[#64748B] text-xs px-2 py-2 w-[130px]">借方税区分</th>
                         <th className="text-left text-[#64748B] text-xs px-4 py-2">貸方</th>
-                        <th className="text-right text-[#64748B] text-xs px-4 py-2">金額</th>
-                        <th className="text-center text-[#64748B] text-xs px-2 py-2 w-[60px]">税率</th>
-                        <th className="text-left text-[#64748B] text-xs px-2 py-2 w-[120px]">税区分</th>
+                        <th className="text-left text-[#64748B] text-xs px-2 py-2 w-[130px]">貸方税区分</th>
+                        <th className="text-right text-[#64748B] text-xs px-4 py-2 whitespace-nowrap">金額</th>
                         <th className="text-left text-[#64748B] text-xs px-4 py-2">摘要</th>
-                        <th className="text-left text-[#64748B] text-xs px-4 py-2">登録番号</th>
-                        <th className="text-left text-[#64748B] text-xs px-4 py-2">顧客</th>
+                        <th className="text-left text-[#64748B] text-xs px-4 py-2 whitespace-nowrap">登録番号</th>
+                        <th className="text-left text-[#64748B] text-xs px-4 py-2 whitespace-nowrap">顧客</th>
                         <th className="text-left text-[#64748B] text-xs px-4 py-2 w-[120px]">操作</th>
                       </tr>
                     </thead>
@@ -1099,29 +1118,27 @@ export default function JournalsPage() {
                                 {[...STD_ACCOUNTS, ...customAccounts].map((a) => <option key={a} value={a}>{a}</option>)}
                               </select>
                             </td>
+                            <td className="px-2 py-2">
+                              <select value={editForm.debitTaxCategory} onChange={(e) => setEditForm({ ...editForm, debitTaxCategory: e.target.value })}
+                                className="w-full bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.15)] rounded px-1 py-1 text-xs text-[#F1F5F9]">
+                                {TAX_CATEGORY_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.value || "対象外"}</option>)}
+                              </select>
+                            </td>
                             <td className="px-4 py-2">
                               <select value={editForm.creditAccount} onChange={(e) => setEditForm({ ...editForm, creditAccount: e.target.value })}
                                 className="w-full bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.15)] rounded px-2 py-1 text-xs text-[#F1F5F9]">
                                 {[...STD_ACCOUNTS, ...customAccounts].map((a) => <option key={a} value={a}>{a}</option>)}
                               </select>
                             </td>
-                            <td className="px-4 py-2">
-                              <input type="number" value={editForm.amount} onChange={(e) => setEditForm({ ...editForm, amount: Number(e.target.value) })}
-                                className="w-full bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.15)] rounded px-2 py-1 text-xs text-[#F1F5F9] text-right" />
-                            </td>
                             <td className="px-2 py-2">
-                              <select value={editForm.taxRate} onChange={(e) => setEditForm({ ...editForm, taxRate: e.target.value, taxCategory: "" })}
-                                className="w-full bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.15)] rounded px-1 py-1 text-xs text-[#F1F5F9]">
-                                <option value="">対象外</option>
-                                <option value="0.1">10%</option>
-                                <option value="0.08">8%</option>
-                              </select>
-                            </td>
-                            <td className="px-2 py-2">
-                              <select value={editForm.taxCategory} onChange={(e) => setEditForm({ ...editForm, taxCategory: e.target.value })}
+                              <select value={editForm.creditTaxCategory} onChange={(e) => setEditForm({ ...editForm, creditTaxCategory: e.target.value })}
                                 className="w-full bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.15)] rounded px-1 py-1 text-xs text-[#F1F5F9]">
                                 {TAX_CATEGORY_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.value || "対象外"}</option>)}
                               </select>
+                            </td>
+                            <td className="px-4 py-2">
+                              <input type="number" value={editForm.amount} onChange={(e) => setEditForm({ ...editForm, amount: Number(e.target.value) })}
+                                className="w-full bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.15)] rounded px-2 py-1 text-xs text-[#F1F5F9] text-right" />
                             </td>
                             <td className="px-4 py-2">
                               <input type="text" value={editForm.description} onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
@@ -1171,26 +1188,24 @@ export default function JournalsPage() {
                                 />
                               )}
                             </td>
-                            <td className="px-4 py-2 text-xs text-[#94A3B8] font-[var(--font-inter)]">{format(new Date(entry.date), "MM/dd")}</td>
-                            <td className="px-4 py-2 text-xs text-[#F1F5F9]">{entry.debitAccount}</td>
-                            <td className="px-4 py-2 text-xs text-[#F1F5F9]">{entry.creditAccount}</td>
-                            <td className="px-4 py-2 text-xs text-[#F1F5F9] text-right font-[var(--font-inter)] font-medium">¥{entry.amount.toLocaleString()}</td>
-                            <td className="px-2 py-2 text-center">
-                              {entry.taxRate === 0.1 ? (
-                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 font-[var(--font-inter)]">10%</span>
-                              ) : entry.taxRate === 0.08 ? (
-                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 font-[var(--font-inter)]">8%</span>
-                              ) : (
-                                <span className="text-[10px] text-[#475569]">-</span>
-                              )}
-                            </td>
+                            <td className="px-4 py-2 text-xs text-[#94A3B8] font-[var(--font-inter)] whitespace-nowrap">{format(new Date(entry.date), "MM/dd")}</td>
+                            <td className="px-4 py-2 text-xs text-[#F1F5F9] whitespace-nowrap">{entry.debitAccount}</td>
                             <td className="px-2 py-2">
-                              {entry.taxCategory ? (
-                                <span className="text-[10px] text-[#94A3B8] truncate">{entry.taxCategory}</span>
+                              {entryTaxCats(entry).debit ? (
+                                <span className="text-[10px] text-[#94A3B8] truncate">{entryTaxCats(entry).debit}</span>
                               ) : (
                                 <span className="text-[10px] text-[#475569]">-</span>
                               )}
                             </td>
+                            <td className="px-4 py-2 text-xs text-[#F1F5F9] whitespace-nowrap">{entry.creditAccount}</td>
+                            <td className="px-2 py-2">
+                              {entryTaxCats(entry).credit ? (
+                                <span className="text-[10px] text-[#94A3B8] truncate">{entryTaxCats(entry).credit}</span>
+                              ) : (
+                                <span className="text-[10px] text-[#475569]">-</span>
+                              )}
+                            </td>
+                            <td className="px-4 py-2 text-xs text-[#F1F5F9] text-right font-[var(--font-inter)] font-medium">¥{entry.amount.toLocaleString()}</td>
                             <td className="px-4 py-2 text-xs text-[#94A3B8] max-w-[200px] truncate">{entry.description}</td>
                             <td className="px-4 py-2 text-xs">
                               {entry.invoiceNumber ? (
@@ -1244,22 +1259,6 @@ export default function JournalsPage() {
                           </div>
                         </div>
                         <div>
-                          <label className="text-[10px] text-[#64748B]">税率</label>
-                          <select value={editForm.taxRate} onChange={(e) => setEditForm({ ...editForm, taxRate: e.target.value, taxCategory: "" })}
-                            className="w-full bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.15)] rounded px-2 py-1.5 text-sm text-[#F1F5F9]">
-                            <option value="">対象外</option>
-                            <option value="0.1">10%</option>
-                            <option value="0.08">8%（軽減）</option>
-                          </select>
-                        </div>
-                        <div>
-                          <label className="text-[10px] text-[#64748B]">税区分（詳細）</label>
-                          <select value={editForm.taxCategory} onChange={(e) => setEditForm({ ...editForm, taxCategory: e.target.value })}
-                            className="w-full bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.15)] rounded px-2 py-1.5 text-sm text-[#F1F5F9]">
-                            {TAX_CATEGORY_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                          </select>
-                        </div>
-                        <div>
                           <label className="text-[10px] text-[#64748B]">借方</label>
                           <select value={editForm.debitAccount} onChange={(e) => setEditForm({ ...editForm, debitAccount: e.target.value })}
                             className="w-full bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.15)] rounded px-2 py-1.5 text-sm text-[#F1F5F9]">
@@ -1267,10 +1266,24 @@ export default function JournalsPage() {
                           </select>
                         </div>
                         <div>
+                          <label className="text-[10px] text-[#64748B]">借方税区分</label>
+                          <select value={editForm.debitTaxCategory} onChange={(e) => setEditForm({ ...editForm, debitTaxCategory: e.target.value })}
+                            className="w-full bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.15)] rounded px-2 py-1.5 text-sm text-[#F1F5F9]">
+                            {TAX_CATEGORY_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                          </select>
+                        </div>
+                        <div>
                           <label className="text-[10px] text-[#64748B]">貸方</label>
                           <select value={editForm.creditAccount} onChange={(e) => setEditForm({ ...editForm, creditAccount: e.target.value })}
                             className="w-full bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.15)] rounded px-2 py-1.5 text-sm text-[#F1F5F9]">
                             {[...STD_ACCOUNTS, ...customAccounts].map((a) => <option key={a} value={a}>{a}</option>)}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="text-[10px] text-[#64748B]">貸方税区分</label>
+                          <select value={editForm.creditTaxCategory} onChange={(e) => setEditForm({ ...editForm, creditTaxCategory: e.target.value })}
+                            className="w-full bg-[rgba(15,23,42,0.5)] border border-[rgba(212,175,55,0.15)] rounded px-2 py-1.5 text-sm text-[#F1F5F9]">
+                            {TAX_CATEGORY_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                           </select>
                         </div>
                         <div>
@@ -1318,12 +1331,17 @@ export default function JournalsPage() {
                           <span className="text-[#D4AF37]">{entry.debitAccount}</span>
                           <span className="text-[#475569]">/</span>
                           <span className="text-[#94A3B8]">{entry.creditAccount}</span>
-                          {entry.taxRate === 0.1 ? (
-                            <span className="text-[10px] px-1 py-0.5 rounded bg-blue-500/10 text-blue-400 font-[var(--font-inter)]">10%</span>
-                          ) : entry.taxRate === 0.08 ? (
-                            <span className="text-[10px] px-1 py-0.5 rounded bg-amber-500/10 text-amber-400 font-[var(--font-inter)]">8%</span>
-                          ) : null}
                         </div>
+                        {(entryTaxCats(entry).debit || entryTaxCats(entry).credit) && (
+                          <div className="flex items-center gap-2 text-[10px] text-[#94A3B8] mb-1">
+                            {entryTaxCats(entry).debit && (
+                              <span className="px-1 py-0.5 rounded bg-blue-500/10 text-blue-400">借: {entryTaxCats(entry).debit}</span>
+                            )}
+                            {entryTaxCats(entry).credit && (
+                              <span className="px-1 py-0.5 rounded bg-amber-500/10 text-amber-400">貸: {entryTaxCats(entry).credit}</span>
+                            )}
+                          </div>
+                        )}
                         <p className="text-xs text-[#64748B] mb-1 truncate">{entry.description}</p>
                         {entry.invoiceNumber ? (
                           <p className="text-[10px] text-[#64748B] mb-2 font-[var(--font-inter)]">登録番号: {entry.invoiceNumber}</p>

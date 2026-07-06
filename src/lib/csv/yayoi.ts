@@ -45,13 +45,16 @@ export function generateYayoiCsv(
     const dateStr = format(new Date(entry.date), "yyyy/MM/dd");
     const isIncome = REVENUE_ACCOUNTS.has(entry.creditAccount);
 
-    // entry.taxCategory が明示指定されていればそのまま使い、なければ自動導出
-    const resolved = entry.taxCategory
-      ?? deriveTaxCategory(entry.taxRate, isIncome, accountingMethod);
-
     let debitTaxType = "対象外";
     let creditTaxType = "対象外";
-    if (entry.taxRate || entry.taxAmount) {
+    if (entry.debitTaxCategory || entry.creditTaxCategory) {
+      // 借方/貸方それぞれに明示指定された税区分をそのまま使う
+      debitTaxType = entry.debitTaxCategory || "対象外";
+      creditTaxType = entry.creditTaxCategory || "対象外";
+    } else if (entry.taxRate || entry.taxAmount) {
+      // 旧データ: 単一 taxCategory / taxRate から片側へ割り当て
+      const resolved = entry.taxCategory
+        ?? deriveTaxCategory(entry.taxRate, isIncome, accountingMethod);
       if (isIncome) creditTaxType = resolved;
       else debitTaxType = resolved;
     }
