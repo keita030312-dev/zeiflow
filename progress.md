@@ -1,6 +1,14 @@
 # 進捗状況（progress.md）
 
-最終更新：2026-06-14
+最終更新：2026-07-07
+
+## 📋 2026-07-07 納品前全数検査（delivery-check）と修正
+
+- [x] **レシート画面の税区分プレフィルが顧客の税込/税抜設定を無視するバグを修正**（`de393de`）: OCR一括登録・レシート編集の `splitLegacyTaxCategory` に顧客の `accountingMethod` を渡すように。税抜顧客に「内税」区分がプリセットされる不整合を解消。journals API の税区分3フィールドに `.max(100)` も追加
+- [x] **manifest.json が認証プロキシに捕まり全ページで「Manifest: Syntax error」が出るバグを修正**（`b3b14c6`）: proxy.ts の静的スキップに manifest.json / robots.txt / sitemap.xml を追加。本番デプロイ・解消確認済み
+- [x] **UI仕上げ**（`50adaa7`）: 仕訳インライン編集の列min-width、dateカレンダーアイコンの二重反転修正
+- [x] 本番E2E: 使い捨てQA組織で 登録→顧客作成→仕訳CRUD→CSV3種（弥生バイト列検証込み）→PDF→ポータルリンク→API異常系(401/404/400)→QA組織SQL削除 まで完走。詳細は `delivery-checklist.md`
+- [ ] 残: OCR実走E2E・精度実測（要APIキー登録+実レシート）、2FA有ログイン、10MB超エラー表示、ポータル送信フロー
 
 ## 📋 2026-06-14 顧客フィードバック対応（全機能）
 
