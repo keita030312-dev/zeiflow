@@ -7,10 +7,7 @@ import { getClientIp } from "@/lib/rate-limit";
 import { reportError } from "@/lib/error-reporter";
 import { parseDocumentKind } from "@/lib/document-kind";
 import { isLikelyMissingSchemaColumn } from "@/lib/prisma-errors";
-import { parseJournalEntryDate } from "@/lib/ocr-result-normalize";
-
-const MAX_UPLOAD_BYTES = 10 * 1024 * 1024; // 10MB
-const ALLOWED_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
+import { buildJournalCreateData, validateUploadedImage } from "@/lib/receipt-journal";
 
 export async function POST(req: NextRequest) {
   const ip = getClientIp(req);
@@ -31,18 +28,8 @@ export async function POST(req: NextRequest) {
         { status: 400 }
       );
     }
-    if (!ALLOWED_IMAGE_TYPES.has(file.type)) {
-      return NextResponse.json(
-        { error: "対応していない画像形式です。JPG / PNG / WEBP / GIF を選択してください。" },
-        { status: 400 }
-      );
-    }
-    if (file.size > MAX_UPLOAD_BYTES) {
-      return NextResponse.json(
-        { error: "画像サイズが大きすぎます。10MB以下の画像を選択してください。" },
-        { status: 400 }
-      );
-    }
+    const fileError = validateUploadedImage(file);
+    if (fileError) return NextResponse.json({ error: fileError }, { status: 400 });
 
     const bytes = await file.arrayBuffer();
     const buffer = Buffer.from(bytes);
@@ -108,23 +95,13 @@ export async function POST(req: NextRequest) {
     // 仕訳エントリ作成（複数レシート分）
     const journalEntries = [];
     for (const result of results) {
-      const tr = result.classification.taxRate;
       const journalEntry = await prisma.journalEntry.create({
-        data: {
-          date: parseJournalEntryDate(result.ocr.date),
-          debitAccount: result.classification.debitAccount,
-          creditAccount: result.classification.creditAccount,
-          amount: result.classification.amount,
-          taxAmount: result.classification.taxAmount ?? null,
-          taxRate:
-            typeof tr === "number" && Number.isFinite(tr) ? tr : null,
-          description: result.classification.description,
-          invoiceNumber: result.ocr.invoiceNumber || null,
+        data: buildJournalCreateData(result, {
           clientId: portal.clientId,
           userId: portal.userId,
-          ...(portal.organizationId ? { organizationId: portal.organizationId } : {}),
+          organizationId: portal.organizationId,
           receiptId: receipt.id,
-        },
+        }),
       });
       journalEntries.push(journalEntry);
     }

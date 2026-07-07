@@ -1,5 +1,6 @@
 import type { JournalEntryData, ClientTaxInfo } from "@/types";
 import { deriveTaxCategory, REVENUE_ACCOUNTS } from "@/lib/tax-categories";
+import { csvEscape } from "@/lib/csv/csv-escape";
 import { format } from "date-fns";
 
 /**
@@ -44,13 +45,16 @@ export function generateYayoiCsv(
     const dateStr = format(new Date(entry.date), "yyyy/MM/dd");
     const isIncome = REVENUE_ACCOUNTS.has(entry.creditAccount);
 
-    // entry.taxCategory が明示指定されていればそのまま使い、なければ自動導出
-    const resolved = entry.taxCategory
-      ?? deriveTaxCategory(entry.taxRate, isIncome, accountingMethod);
-
     let debitTaxType = "対象外";
     let creditTaxType = "対象外";
-    if (entry.taxRate || entry.taxAmount) {
+    if (entry.debitTaxCategory || entry.creditTaxCategory) {
+      // 借方/貸方それぞれに明示指定された税区分をそのまま使う
+      debitTaxType = entry.debitTaxCategory || "対象外";
+      creditTaxType = entry.creditTaxCategory || "対象外";
+    } else if (entry.taxRate || entry.taxAmount) {
+      // 旧データ: 単一 taxCategory / taxRate から片側へ割り当て
+      const resolved = entry.taxCategory
+        ?? deriveTaxCategory(entry.taxRate, isIncome, accountingMethod);
       if (isIncome) creditTaxType = resolved;
       else debitTaxType = resolved;
     }
@@ -78,25 +82,16 @@ export function generateYayoiCsv(
       String(entry.amount),
       String(entry.taxAmount || ""),
       description,
-      "",
-      "",
-      "",
-      "",
-      memo,
-      "",
-      "",
-      "",
+      "",       // 番号 (R列, index 17)
+      "",       // 期日 (S列, index 18)
+      "0",      // タイプ (T列, index 19): 通常仕訳
+      "",       // 生成元 (U列, index 20)
+      memo,     // 仕訳メモ (V列, index 21)
+      "",       // 付箋1 (W列, index 22)
+      "",       // 付箋2 (X列, index 23)
+      "0",      // 調整 (Y列, index 24)
     ].join(",");
   });
 
   return [header, ...rows].join("\r\n");
-}
-
-function csvEscape(value: string): string {
-  const cleaned = value.replace(/[\r\n]+/g, " ").trim();
-  const safe = /^[=+\-@\t]/.test(cleaned) ? `'${cleaned}` : cleaned;
-  if (safe.includes(",") || safe.includes('"')) {
-    return `"${safe.replace(/"/g, '""')}"`;
-  }
-  return safe;
 }

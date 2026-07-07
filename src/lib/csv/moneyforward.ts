@@ -1,5 +1,6 @@
 import type { JournalEntryData, ClientTaxInfo } from "@/types";
 import { deriveTaxCategory, REVENUE_ACCOUNTS } from "@/lib/tax-categories";
+import { csvEscape } from "@/lib/csv/csv-escape";
 import { format } from "date-fns";
 
 // MF形式の税区分文字列に変換（内税: 税込、外税: 税抜）
@@ -56,12 +57,18 @@ export function generateMoneyForwardCsv(
     const dateStr = format(new Date(entry.date), "yyyy/MM/dd");
     const isIncome = REVENUE_ACCOUNTS.has(entry.creditAccount);
 
-    const resolved = entry.taxCategory
-      ?? deriveTaxCategory(entry.taxRate, isIncome, accountingMethod);
-
     let debitTaxType = "対象外";
     let creditTaxType = "対象外";
-    if (entry.taxRate || entry.taxAmount) {
+    if (entry.debitTaxCategory || entry.creditTaxCategory) {
+      // 借方/貸方それぞれに明示指定された税区分をMF形式へ変換
+      debitTaxType = entry.debitTaxCategory
+        ? toMfTaxLabel(entry.debitTaxCategory, isExclusive) : "対象外";
+      creditTaxType = entry.creditTaxCategory
+        ? toMfTaxLabel(entry.creditTaxCategory, isExclusive) : "対象外";
+    } else if (entry.taxRate || entry.taxAmount) {
+      // 旧データ: 単一 taxCategory / taxRate から片側へ割り当て
+      const resolved = entry.taxCategory
+        ?? deriveTaxCategory(entry.taxRate, isIncome, accountingMethod);
       const mfLabel = toMfTaxLabel(resolved, isExclusive);
       if (isIncome) creditTaxType = mfLabel;
       else debitTaxType = mfLabel;
@@ -96,13 +103,4 @@ export function generateMoneyForwardCsv(
   });
 
   return [header, ...rows].join("\r\n");
-}
-
-function csvEscape(value: string): string {
-  const cleaned = value.replace(/[\r\n]+/g, " ").trim();
-  const safe = /^[=+\-@\t]/.test(cleaned) ? `'${cleaned}` : cleaned;
-  if (safe.includes(",") || safe.includes('"')) {
-    return `"${safe.replace(/"/g, '""')}"`;
-  }
-  return safe;
 }

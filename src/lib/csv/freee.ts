@@ -1,5 +1,6 @@
 import type { JournalEntryData, ClientTaxInfo } from "@/types";
 import { deriveTaxCategory, REVENUE_ACCOUNTS } from "@/lib/tax-categories";
+import { csvEscape } from "@/lib/csv/csv-escape";
 import { format } from "date-fns";
 
 // freee形式の税区分文字列に変換
@@ -58,15 +59,21 @@ export function generateFreeeCsv(
     const dateStr = format(new Date(entry.date), "yyyy-MM-dd");
     const isIncome = REVENUE_ACCOUNTS.has(entry.creditAccount);
 
-    const resolved = entry.taxCategory
-      ?? deriveTaxCategory(entry.taxRate, isIncome, accountingMethod);
-
-    const taxType = (entry.taxRate || entry.taxAmount)
-      ? toFreeeTaxLabel(resolved, isIncome, isExclusive)
-      : "対象外";
+    // freeeの税区分は1列: 収入なら貸方側・支出なら借方側の税区分を採用
+    let taxType: string;
+    if (entry.debitTaxCategory || entry.creditTaxCategory) {
+      const sideCat = isIncome ? entry.creditTaxCategory : entry.debitTaxCategory;
+      taxType = sideCat ? toFreeeTaxLabel(sideCat, isIncome, isExclusive) : "対象外";
+    } else {
+      const resolved = entry.taxCategory
+        ?? deriveTaxCategory(entry.taxRate, isIncome, accountingMethod);
+      taxType = (entry.taxRate || entry.taxAmount)
+        ? toFreeeTaxLabel(resolved, isIncome, isExclusive)
+        : "対象外";
+    }
 
     // 課税取引のみ内税/外税を設定。対象外・非課税は空欄
-    const hasTax = !!(entry.taxRate || entry.taxAmount) && taxType !== "対象外" && taxType !== "非課税";
+    const hasTax = taxType !== "対象外" && taxType !== "非課税";
     const taxCalcLabel = hasTax ? (isExclusive ? "外税" : "内税") : "";
 
     const partner = csvEscape(entry.description);
@@ -101,13 +108,4 @@ export function generateFreeeCsv(
   });
 
   return [header, ...rows].join("\r\n");
-}
-
-function csvEscape(value: string): string {
-  const cleaned = value.replace(/[\r\n]+/g, " ").trim();
-  const safe = /^[=+\-@\t]/.test(cleaned) ? `'${cleaned}` : cleaned;
-  if (safe.includes(",") || safe.includes('"')) {
-    return `"${safe.replace(/"/g, '""')}"`;
-  }
-  return safe;
 }

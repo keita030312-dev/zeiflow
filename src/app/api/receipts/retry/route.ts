@@ -4,7 +4,7 @@ import { requireAuth, getScope } from "@/lib/auth-middleware";
 import { processReceipt } from "@/lib/ai/ocr";
 import { preprocessForOcr } from "@/lib/image-preprocess";
 import { reportError } from "@/lib/error-reporter";
-import { parseJournalEntryDate } from "@/lib/ocr-result-normalize";
+import { buildJournalCreateData } from "@/lib/receipt-journal";
 import type { DocumentKind } from "@/generated/prisma/enums";
 
 export async function POST(req: NextRequest) {
@@ -71,26 +71,16 @@ export async function POST(req: NextRequest) {
     });
 
     const createdJournals = await Promise.all(
-      results.map((result) => {
-        const tr = result.classification.taxRate;
-        return prisma.journalEntry.create({
-          data: {
-            date: parseJournalEntryDate(result.ocr.date),
-            debitAccount: result.classification.debitAccount,
-            creditAccount: result.classification.creditAccount,
-            amount: result.classification.amount,
-            taxAmount: result.classification.taxAmount ?? null,
-            taxRate:
-              typeof tr === "number" && Number.isFinite(tr) ? tr : null,
-            description: result.classification.description,
-            invoiceNumber: result.ocr.invoiceNumber || null,
+      results.map((result) =>
+        prisma.journalEntry.create({
+          data: buildJournalCreateData(result, {
             clientId: receipt.clientId,
             userId: auth.id,
-            ...(auth.orgId ? { organizationId: auth.orgId } : {}),
+            organizationId: auth.orgId,
             receiptId,
-          },
-        });
-      })
+          }),
+        })
+      )
     );
 
     return NextResponse.json({

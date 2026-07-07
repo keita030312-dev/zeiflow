@@ -87,3 +87,88 @@ export function deriveTaxCategory(
 export const REVENUE_ACCOUNTS = new Set([
   "売上高", "受取利息", "雑収入",
 ]);
+
+/**
+ * UIセレクト用の税区分選択肢。
+ * ★value はDBの taxCategory に保存され、CSV出力(toFreeeTaxLabel/toMfTaxLabel)が
+ *   文字列パースする。1文字も変更しないこと。
+ */
+// ────────────────────────────────────────
+// 借方/貸方 分離税区分 用ヘルパー
+// ────────────────────────────────────────
+
+/** 税区分文字列 → 税率。非課税/対象外/空 は null */
+export function rateOfTaxCategory(value: string | null | undefined): number | null {
+  if (!value || value === "対象外") return null;
+  const all = [...PURCHASE_TAX_CATEGORIES, ...SALES_TAX_CATEGORIES];
+  const found = all.find((c) => c.value === value);
+  if (found) return found.rate > 0 ? found.rate : null;
+  const m = value.match(/(\d+)%/);
+  if (m) {
+    const n = Number(m[1]);
+    if (n === 10) return 0.1;
+    if (n === 8) return 0.08;
+    if (n === 5) return 0.05;
+  }
+  return null;
+}
+
+/** 借方/貸方の税区分から税率を導出(通常は片側のみ課税。両方課税なら借方優先) */
+export function deriveTaxRateFromCategories(
+  debit: string | null | undefined,
+  credit: string | null | undefined
+): number | null {
+  return rateOfTaxCategory(debit) ?? rateOfTaxCategory(credit);
+}
+
+/**
+ * 旧データ(単一 taxCategory / taxRate のみ)を編集UI用に借方/貸方へ分割する。
+ * 優先順: 新フィールド → 旧 taxCategory を売上判定で片側へ → taxRate から導出
+ */
+export function splitLegacyTaxCategory(
+  entry: {
+    debitTaxCategory?: string | null;
+    creditTaxCategory?: string | null;
+    taxCategory?: string | null;
+    taxRate?: number | null;
+    creditAccount: string;
+  },
+  accountingMethod: AccountingMethod = "TAX_INCLUSIVE"
+): { debit: string; credit: string } {
+  if (entry.debitTaxCategory || entry.creditTaxCategory) {
+    return {
+      debit: entry.debitTaxCategory || "",
+      credit: entry.creditTaxCategory || "",
+    };
+  }
+  const isIncome = REVENUE_ACCOUNTS.has(entry.creditAccount);
+  if (entry.taxCategory) {
+    return isIncome
+      ? { debit: "", credit: entry.taxCategory }
+      : { debit: entry.taxCategory, credit: "" };
+  }
+  if (entry.taxRate) {
+    const derived = deriveTaxCategory(entry.taxRate, isIncome, accountingMethod);
+    if (derived && derived !== "対象外") {
+      return isIncome ? { debit: "", credit: derived } : { debit: derived, credit: "" };
+    }
+  }
+  return { debit: "", credit: "" };
+}
+
+export const TAX_CATEGORY_OPTIONS = [
+  { value: "", label: "対象外" },
+  { value: "課対仕入内10%", label: "課対仕入内10%（仕入・内税10%）" },
+  { value: "課対仕入外10%", label: "課対仕入外10%（仕入・外税10%）" },
+  { value: "課対仕入内軽減8%", label: "課対仕入内軽減8%（仕入・内税・軽減）" },
+  { value: "課対仕入外軽減8%", label: "課対仕入外軽減8%（仕入・外税・軽減）" },
+  { value: "課対仕入内8%", label: "課対仕入内8%（仕入・内税・旧税率）" },
+  { value: "課対仕入外8%", label: "課対仕入外8%（仕入・外税・旧税率）" },
+  { value: "課対仕入内5%", label: "課対仕入内5%（仕入・内税・旧税率）" },
+  { value: "非課税仕入", label: "非課税仕入" },
+  { value: "課税売上内10%", label: "課税売上内10%（売上・内税10%）" },
+  { value: "課税売上外10%", label: "課税売上外10%（売上・外税10%）" },
+  { value: "課税売上内軽減8%", label: "課税売上内軽減8%（売上・内税・軽減）" },
+  { value: "課税売上外軽減8%", label: "課税売上外軽減8%（売上・外税・軽減）" },
+  { value: "非課税売上", label: "非課税売上" },
+] as const;

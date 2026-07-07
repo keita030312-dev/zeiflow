@@ -8,9 +8,14 @@ export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // 静的ファイルはスキップ
+  // manifest.json を通すと /login へ307され、ブラウザが
+  // 「Manifest: Syntax error」を全ページで出す
   if (
     pathname.startsWith("/_next") ||
-    pathname.startsWith("/favicon")
+    pathname.startsWith("/favicon") ||
+    pathname === "/manifest.json" ||
+    pathname === "/robots.txt" ||
+    pathname === "/sitemap.xml"
   ) {
     return NextResponse.next();
   }

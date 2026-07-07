@@ -173,7 +173,9 @@ model JournalEntry {
   amount          Int
   taxAmount       Int?      @map("tax_amount")
   taxRate         Float?    @map("tax_rate")
-  taxCategory     String?   @map("tax_category")
+  taxCategory     String?   @map("tax_category") // 旧: 単一税区分(後方互換のため残置。新規保存では null 化)
+  debitTaxCategory  String? @map("debit_tax_category")
+  creditTaxCategory String? @map("credit_tax_category")
   description     String
   invoiceNumber   String?   @map("invoice_number")
   memo            String?

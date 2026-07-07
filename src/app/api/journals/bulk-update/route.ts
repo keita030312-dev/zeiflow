@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { getScope, requireAuth } from "@/lib/auth-middleware";
+import { deriveTaxRateFromCategories } from "@/lib/tax-categories";
 
 const entrySchema = z.object({
   id: z.string().min(1),
@@ -18,8 +19,11 @@ const entrySchema = z.object({
   debitAccount: z.string().trim().min(1).max(100),
   creditAccount: z.string().trim().min(1).max(100),
   amount: z.number().int().positive().max(1_000_000_000),
-  taxRate: z.union([z.literal(0.1), z.literal(0.08), z.null()]),
+  // taxRate は旧クライアント(開きっぱなしのタブ)互換のため optional で残す
+  taxRate: z.union([z.literal(0.1), z.literal(0.08), z.null()]).optional(),
   taxCategory: z.string().trim().max(100).nullable().optional(),
+  debitTaxCategory: z.string().trim().max(100).nullable().optional(),
+  creditTaxCategory: z.string().trim().max(100).nullable().optional(),
   description: z.string().trim().min(1).max(500),
   invoiceNumber: z.string().trim().max(100).nullable(),
   memo: z.string().trim().max(1000).nullable(),
@@ -85,14 +89,27 @@ export async function PUT(req: NextRequest) {
           throw new Error("日付が不正です");
         }
 
+        // 借方/貸方税区分が来ていれば税率をサーバー側で導出、旧taxCategoryはクリア
+        const sideCatsTouched =
+          entry.debitTaxCategory !== undefined ||
+          entry.creditTaxCategory !== undefined;
+        const nextTaxRate = sideCatsTouched
+          ? deriveTaxRateFromCategories(
+              entry.debitTaxCategory,
+              entry.creditTaxCategory,
+            )
+          : entry.taxRate === undefined
+            ? existing.taxRate
+            : entry.taxRate;
+
         const taxChanged =
           existing.amount !== entry.amount ||
-          existing.taxRate !== entry.taxRate;
+          existing.taxRate !== nextTaxRate;
         const taxAmount = taxChanged
-          ? entry.taxRate === null
+          ? nextTaxRate === null
             ? null
             : Math.round(
-                (entry.amount * entry.taxRate) / (1 + entry.taxRate),
+                (entry.amount * nextTaxRate) / (1 + nextTaxRate),
               )
           : existing.taxAmount;
 
@@ -104,10 +121,16 @@ export async function PUT(req: NextRequest) {
             creditAccount: entry.creditAccount,
             amount: entry.amount,
             taxAmount,
-            taxRate: entry.taxRate,
-            ...("taxCategory" in entry
-              ? { taxCategory: entry.taxCategory ?? null }
-              : {}),
+            taxRate: nextTaxRate,
+            ...(sideCatsTouched
+              ? {
+                  debitTaxCategory: entry.debitTaxCategory ?? null,
+                  creditTaxCategory: entry.creditTaxCategory ?? null,
+                  taxCategory: null,
+                }
+              : "taxCategory" in entry
+                ? { taxCategory: entry.taxCategory ?? null }
+                : {}),
             description: entry.description,
             invoiceNumber: entry.invoiceNumber,
             memo: entry.memo,

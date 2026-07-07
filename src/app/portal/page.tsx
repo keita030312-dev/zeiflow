@@ -4,15 +4,13 @@
 import { useState, useEffect, useRef, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { compressImage } from "@/lib/image-compress";
+import { MAX_UPLOAD_BYTES, ALLOWED_IMAGE_TYPES } from "@/lib/upload-limits";
 
 interface UploadResult {
   receiptId: string;
   status: string;
   ocr: { storeName: string; date: string; total: number };
 }
-
-const MAX_UPLOAD_BYTES = 10 * 1024 * 1024; // 10MB
-const ALLOWED_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
 
 export default function PortalPageWrapper() {
   return (

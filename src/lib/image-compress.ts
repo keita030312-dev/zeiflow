@@ -5,9 +5,9 @@
  * - JPEG 0.92品質で出力（高品質）
  * - 最大4.5MBに収める（Anthropic API対応）
  */
-const MAX_UPLOAD_BYTES = 10 * 1024 * 1024; // 10MB
+import { MAX_UPLOAD_BYTES, ALLOWED_IMAGE_TYPES } from "@/lib/upload-limits";
+
 const TARGET_BYTES = 4.5 * 1024 * 1024; // 4.5MB
-const ALLOWED_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
 
 export async function compressImage(file: File): Promise<File> {
   if (!ALLOWED_IMAGE_TYPES.has(file.type)) {

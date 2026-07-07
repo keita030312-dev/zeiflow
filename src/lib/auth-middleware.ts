@@ -27,11 +27,6 @@ function decodeToken(req: NextRequest): TokenPayload | null {
   }
 }
 
-// JWT のみ復号する後方互換 API。新規コードでは requireAuth を使うこと。
-export function getUser(req: NextRequest): TokenPayload | null {
-  return decodeToken(req);
-}
-
 /**
  * 認証 + 生存確認。JWT が有効でも下のどれかなら 401/403 を返す:
  * - DB に user が存在しない(退会・削除済み)

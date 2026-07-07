@@ -67,6 +67,8 @@ export interface JournalEntryData {
   taxAmount?: number;
   taxRate?: number;
   taxCategory?: string;
+  debitTaxCategory?: string;
+  creditTaxCategory?: string;
   description: string;
   invoiceNumber?: string;
   memo?: string;
