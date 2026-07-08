@@ -36,10 +36,13 @@ export async function POST(req: NextRequest) {
         // 「存在するメール = 500、存在しないメール = 200」になり email 列挙が可能。
         // ここで握り潰してログだけ残し、常に同じ成功レスポンスを返す。
         try {
+        // text パート必須: HTML専用のリセット風メールは新興ドメインだと
+        // Gmail に受領後サイレント破棄される(2026-07-08 実測。Resend上はdeliveredになる)
         await resend.emails.send({
           from: process.env.RESEND_FROM || "ZeiFlow <noreply@resend.dev>",
           to: email,
           subject: "【ZeiFlow】パスワードリセット",
+          text: `${user.name} 様\n\nZeiFlowのパスワードリセットのリクエストを受け付けました。\n以下のURLから新しいパスワードを設定してください(有効期限1時間):\n\n${resetUrl}\n\n心当たりがない場合は、このメールを無視してください。`,
           html: `
             <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 40px 20px;">
               <div style="text-align: center; margin-bottom: 30px;">
