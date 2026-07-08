@@ -1,6 +1,15 @@
 # 進捗状況（progress.md）
 
-最終更新：2026-07-07
+最終更新：2026-07-08
+
+## 📋 2026-07-08 納品仕上げ（運用設定検証+納品資料整備）
+
+- [x] **バックアップAPI 本番実走検証**: QA組織で register→承認→ログイン→GET /api/backup（ファイル名・JSON構造・組織スコープ・監査ログ記録を確認）→QA組織SQL削除。再検証スクリプト `scripts/qa-backup-check.mjs` を追加
+- [x] **メンテナンスモードの実装確認**: 状態API（GET /api/maintenance=false）+ 切替は /superadmin ボタン（PUT /api/superadmin）。実切替は顧客影響があるため深夜帯 or 納品デモ時に実施
+- [x] **納品資料4点を実装に合わせて更新**: 操作手順（税区分2欄・弥生Shift-JIS・5枚上限）/ 既知の制限（413・2FAリカバリー・リセットメール）/ 復旧手順（メンテ切替の実手順・backup範囲・RESEND_FROM）/ 運用設定チェックリスト（同上）。旧記載の「POST /api/maintenance」は実装に存在しない誤りだったため修正
+- [x] **顧客連絡文面ドラフト**: `docs/顧客連絡文面_2026-07_弥生CSV修正.md`（弥生取込再確認の依頼+税区分2欄化の案内。送信は keita）
+- [x] node_modules の pg が空になっていた問題を `npm install` で修復（OneDrive移設の名残とみられる）
+- [ ] 残: OCR精度実測（実レシート待ち）/ Resend独自ドメイン検証（keita作業）/ メンテモード実切替1回
 
 ## 📋 2026-07-07 納品前全数検査（delivery-check）と修正
 
