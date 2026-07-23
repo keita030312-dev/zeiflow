@@ -1,6 +1,11 @@
 # 進捗状況（progress.md）
 
-最終更新：2026-07-07
+最終更新：2026-07-23
+
+## 📋 2026-07-23 本番障害修正: 大きい画像の413エラー（PR #17）
+
+- [x] **iPhone写真(4.5MB超)のアップロードが「The string did not match the expected pattern.」で失敗する本番障害を修正**: 原因はVercelのBody上限4.5MB超過(413)+非JSON応答を `res.json()` が解釈できないSafari固有エラー。①`image-compress.ts` を段階的圧縮(幅1600/1200×品質0.92〜0.6)に書き直し送信4MB以下を保証、デコード失敗時に原本を無圧縮送信するすり抜けを封鎖 ②`api-response.ts` 新設(`readJsonOrThrow`)で413/504等を日本語メッセージ化 ③portal/receipts両画面に適用。実ブラウザ9ケース検証全PASS(7.85MB→0.80MB)。ブランチ `fix/upload-413-large-images`
+- [ ] 残: PR #17 のマージ+本番デプロイ(マージまで顧客環境では再発しうる)
 
 ## 📋 2026-07-07 納品前全数検査（delivery-check）と修正
 
