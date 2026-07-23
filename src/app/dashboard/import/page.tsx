@@ -13,6 +13,9 @@ import {
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { STD_ACCOUNTS as ACCOUNTS } from "@/lib/accounts";
+import { readJsonOrThrow, toUserMessage, ApiError } from "@/lib/api-response";
+import { compressImage } from "@/lib/image-compress";
+import { WIRE_SAFE_BYTES, ALLOWED_IMAGE_TYPES } from "@/lib/upload-limits";
 
 interface Client {
   id: string;
@@ -61,6 +64,11 @@ export default function ImportPage() {
   async function handleImport(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file || !selectedClient) return;
+    if (file.size > WIRE_SAFE_BYTES) {
+      toast.error("ファイルサイズが大きすぎます（上限4MB）。CSVを分割してからインポートしてください。");
+      if (fileRef.current) fileRef.current.value = "";
+      return;
+    }
     setUploading(true);
     setResult(null);
     try {
@@ -68,16 +76,13 @@ export default function ImportPage() {
       formData.append("file", file);
       formData.append("clientId", selectedClient);
       const res = await fetch("/api/import", { method: "POST", body: formData });
-      const data = await res.json();
-      if (res.ok) {
-        setResult({ imported: data.imported, errors: data.errors });
-        toast.success(`${data.imported}件の仕訳をインポートしました`);
-      } else {
-        toast.error(data.error);
-        if (data.errors) setResult({ imported: 0, errors: data.errors });
-      }
-    } catch {
-      toast.error("インポートに失敗しました");
+      const data = await readJsonOrThrow<{ imported: number; errors?: string[] }>(res, "インポートに失敗しました");
+      setResult({ imported: data.imported, errors: data.errors });
+      toast.success(`${data.imported}件の仕訳をインポートしました`);
+    } catch (e) {
+      toast.error(toUserMessage(e, "インポートに失敗しました"));
+      const body = e instanceof ApiError ? (e.body as { errors?: string[] } | null) : null;
+      if (body?.errors) setResult({ imported: 0, errors: body.errors });
     } finally {
       setUploading(false);
       if (fileRef.current) fileRef.current.value = "";
@@ -92,13 +97,20 @@ export default function ImportPage() {
     setExtracting(true);
     setPreviewRows([]);
     try {
+      // 画像は圧縮して4MB以下を保証、PDFは圧縮できないため事前サイズチェック
+      let sendFile = file;
+      if (ALLOWED_IMAGE_TYPES.has(file.type)) {
+        sendFile = await compressImage(file);
+      } else if (file.size > WIRE_SAFE_BYTES) {
+        throw new Error("ファイルサイズが大きすぎます（上限4MB）。PDFはページを分割するか圧縮してからアップロードしてください。");
+      }
       const formData = new FormData();
-      formData.append("file", file);
+      formData.append("file", sendFile);
       formData.append("clientId", stmtClient);
       formData.append("statementType", stmtType);
       const res = await fetch("/api/import/statement", { method: "POST", body: formData });
-      const data = await res.json();
-      if (res.ok && Array.isArray(data.transactions)) {
+      const data = await readJsonOrThrow<{ transactions?: unknown }>(res, "抽出に失敗しました");
+      if (Array.isArray(data.transactions)) {
         if (data.transactions.length === 0) {
           toast.warning("取引データが見つかりませんでした");
         } else {
@@ -123,10 +135,10 @@ export default function ImportPage() {
           toast.success(`${data.transactions.length}件の取引を抽出しました。内容を確認してください。`);
         }
       } else {
-        toast.error(data.error || "抽出に失敗しました");
+        toast.error("抽出に失敗しました");
       }
-    } catch {
-      toast.error("通信エラーが発生しました");
+    } catch (e) {
+      toast.error(toUserMessage(e, "通信エラーが発生しました"));
     } finally {
       setExtracting(false);
       if (stmtFileRef.current) stmtFileRef.current.value = "";
@@ -192,16 +204,12 @@ export default function ImportPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ clientId: stmtClient, transactions }),
       });
-      const data = await res.json();
-      if (res.ok) {
-        setStmtResult({ imported: data.imported, errors: data.errors });
-        setStmtStep("done");
-        toast.success(`${data.imported}件の仕訳を登録しました`);
-      } else {
-        toast.error(data.error || "保存に失敗しました");
-      }
-    } catch {
-      toast.error("通信エラーが発生しました");
+      const data = await readJsonOrThrow<{ imported: number; errors?: string[] }>(res, "保存に失敗しました");
+      setStmtResult({ imported: data.imported, errors: data.errors });
+      setStmtStep("done");
+      toast.success(`${data.imported}件の仕訳を登録しました`);
+    } catch (e) {
+      toast.error(toUserMessage(e, "通信エラーが発生しました"));
     } finally {
       setSaving(false);
     }

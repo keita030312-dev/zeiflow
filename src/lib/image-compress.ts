@@ -2,12 +2,71 @@
  * 画像をレシートOCR向けに圧縮する
  * - 最大幅1600pxにリサイズ（登録番号等の小さい文字を最大限保持）
  * - カラーのまま、加工なしで送信
- * - JPEG 0.92品質で出力（高品質）
- * - 最大4.5MBに収める（Anthropic API対応）
+ * - JPEG 0.92品質から段階的に下げ、必ず4MB以下に収めて送信する
+ *   （VercelのリクエストBody上限4.5MBをmultipartオーバーヘッド込みで確実に下回る値。
+ *     超過するとVercelが413の非JSON応答を返し、Safariで
+ *     "The string did not match the expected pattern." になる）
  */
-import { MAX_UPLOAD_BYTES, ALLOWED_IMAGE_TYPES } from "@/lib/upload-limits";
+import { MAX_UPLOAD_BYTES, ALLOWED_IMAGE_TYPES, WIRE_SAFE_BYTES } from "@/lib/upload-limits";
 
-const TARGET_BYTES = 4.5 * 1024 * 1024; // 4.5MB
+// canvas面積の上限（旧iOS Safariは約16.7Mピクセルで silently 失敗するため余裕を持たせる）
+const MAX_CANVAS_PIXELS = 12 * 1000 * 1000;
+
+// 縮小幅×JPEG品質の組み合わせを上から順に試し、最初に4MB以下になったものを採用
+const COMPRESS_ATTEMPTS: { maxWidth: number; quality: number }[] = [
+  { maxWidth: 1600, quality: 0.92 },
+  { maxWidth: 1600, quality: 0.75 },
+  { maxWidth: 1600, quality: 0.6 },
+  { maxWidth: 1200, quality: 0.6 },
+];
+
+function loadImage(file: File): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      resolve(img);
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("decode failed"));
+    };
+    img.src = url;
+  });
+}
+
+function toJpegBlob(
+  img: HTMLImageElement,
+  maxWidth: number,
+  quality: number
+): Promise<Blob | null> {
+  const canvas = document.createElement("canvas");
+  let w = img.width;
+  let h = img.height;
+  if (w > maxWidth) {
+    h = Math.round((h * maxWidth) / w);
+    w = maxWidth;
+  }
+  // 縦長画像（長尺スクショ等）でもcanvas面積上限内に収める
+  if (w * h > MAX_CANVAS_PIXELS) {
+    const scale = Math.sqrt(MAX_CANVAS_PIXELS / (w * h));
+    w = Math.max(1, Math.floor(w * scale));
+    h = Math.max(1, Math.floor(h * scale));
+  }
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return Promise.resolve(null);
+
+  ctx.fillStyle = "#fff";
+  ctx.fillRect(0, 0, w, h);
+  ctx.drawImage(img, 0, 0, w, h);
+
+  return new Promise((resolve) => {
+    canvas.toBlob((blob) => resolve(blob), "image/jpeg", quality);
+  });
+}
 
 export async function compressImage(file: File): Promise<File> {
   if (!ALLOWED_IMAGE_TYPES.has(file.type)) {
@@ -18,54 +77,32 @@ export async function compressImage(file: File): Promise<File> {
     throw new Error("画像サイズが大きすぎます。10MB以下の画像を選択してください。");
   }
 
-  // 4.5MB以下ならそのまま送信（圧縮による劣化を防ぐ）
-  if (file.size <= TARGET_BYTES && (file.type === "image/jpeg" || file.type === "image/png")) {
+  // 4MB以下ならそのまま送信（圧縮による劣化を防ぐ）
+  if (file.size <= WIRE_SAFE_BYTES && (file.type === "image/jpeg" || file.type === "image/png")) {
     return file;
   }
 
-  return new Promise((resolve) => {
-    const img = new Image();
-    img.onload = () => {
-      const canvas = document.createElement("canvas");
-      const maxWidth = 1600;
-      let w = img.width;
-      let h = img.height;
-      if (w > maxWidth) {
-        h = Math.round((h * maxWidth) / w);
-        w = maxWidth;
-      }
-      canvas.width = w;
-      canvas.height = h;
-      const ctx = canvas.getContext("2d")!;
+  let img: HTMLImageElement;
+  try {
+    img = await loadImage(file);
+  } catch {
+    // デコード不能でも4MB以下なら原本をそのまま送る（WEBP/GIF等はサーバー側で処理可能）
+    if (file.size <= WIRE_SAFE_BYTES) return file;
+    throw new Error(
+      "この画像はブラウザで縮小できませんでした。スクリーンショットを撮って送信するか、別の写真をお試しください。"
+    );
+  }
 
-      ctx.fillStyle = "#fff";
-      ctx.fillRect(0, 0, w, h);
-      ctx.drawImage(img, 0, 0, w, h);
+  for (const { maxWidth, quality } of COMPRESS_ATTEMPTS) {
+    const blob = await toJpegBlob(img, maxWidth, quality);
+    if (blob && blob.size <= WIRE_SAFE_BYTES) {
+      return new File([blob], file.name, { type: "image/jpeg" });
+    }
+  }
 
-      canvas.toBlob(
-        (blob) => {
-          if (!blob) { resolve(file); return; }
-          if (blob.size <= TARGET_BYTES) {
-            resolve(new File([blob], file.name, { type: "image/jpeg" }));
-          } else {
-            canvas.toBlob(
-              (blob2) => {
-                if (blob2) {
-                  resolve(new File([blob2], file.name, { type: "image/jpeg" }));
-                } else {
-                  resolve(file);
-                }
-              },
-              "image/jpeg",
-              0.7
-            );
-          }
-        },
-        "image/jpeg",
-        0.92
-      );
-    };
-    img.onerror = () => resolve(file);
-    img.src = URL.createObjectURL(file);
-  });
+  // 圧縮が全滅しても原本が4MB以下なら送れる
+  if (file.size <= WIRE_SAFE_BYTES) return file;
+  throw new Error(
+    "画像を送信可能なサイズに縮小できませんでした。スクリーンショットを撮って送信してください。"
+  );
 }

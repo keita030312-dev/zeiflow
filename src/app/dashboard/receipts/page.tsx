@@ -28,6 +28,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { compressImage } from "@/lib/image-compress";
+import { readJsonOrThrow, toUserMessage } from "@/lib/api-response";
 import { MAX_UPLOAD_BYTES, ALLOWED_IMAGE_TYPES } from "@/lib/upload-limits";
 import { STD_ACCOUNTS } from "@/lib/accounts";
 import {
@@ -327,12 +328,7 @@ export default function ReceiptsPage() {
       method: "POST",
       body: formData,
     });
-    const data = await res.json();
-    if (res.ok) {
-      return data;
-    } else {
-      throw new Error(data.error || "読み取りに失敗しました");
-    }
+    return await readJsonOrThrow<ReceiptResult>(res, "読み取りに失敗しました");
   }
 
   const [uploadQuality, setUploadQuality] = useState<"fast" | "accurate" | "ultra">("accurate");
@@ -415,8 +411,7 @@ export default function ReceiptsPage() {
         toast.success("レシートを読み取りました");
         fetchReceipts();
       } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        toast.error("エラー: " + msg);
+        toast.error("エラー: " + toUserMessage(err, "読み取りに失敗しました"));
       } finally {
         setProcessing(false);
       }
@@ -699,17 +694,14 @@ export default function ReceiptsPage() {
           })),
         }),
       });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || "一括保存に失敗しました");
-      }
+      const data = await readJsonOrThrow<{ updated: number }>(res, "一括保存に失敗しました");
       toast.success(`${data.updated}件の仕訳を一括更新しました`);
       setBatchRows([]);
       setFiles([]);
       fetchReceipts();
     } catch (error) {
       toast.error(
-        error instanceof Error ? error.message : "一括保存に失敗しました",
+        toUserMessage(error, "一括保存に失敗しました"),
       );
     } finally {
       setSavingBatch(false);
@@ -1506,14 +1498,10 @@ export default function ReceiptsPage() {
                                 headers: { "Content-Type": "application/json" },
                                 body: JSON.stringify({ receiptId: receipt.id }),
                               });
-                              if (res.ok) {
-                                toast.success("再処理が完了しました");
-                                fetchReceipts();
-                              } else {
-                                const data = await res.json();
-                                toast.error(data.error || "再処理に失敗しました");
-                              }
-                            } catch { toast.error("再処理に失敗しました"); }
+                              await readJsonOrThrow(res, "再処理に失敗しました");
+                              toast.success("再処理が完了しました");
+                              fetchReceipts();
+                            } catch (e) { toast.error(toUserMessage(e, "再処理に失敗しました")); }
                             finally { setRetryingReceiptId(null); }
                           }}
                           className="w-full mt-1 py-1.5 rounded text-xs bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
@@ -1548,14 +1536,10 @@ export default function ReceiptsPage() {
                           if (!confirm("このレシート画像を削除しますか？\n仕訳は残ります。")) return;
                           try {
                             const res = await fetch(`/api/receipts?id=${receipt.id}`, { method: "DELETE" });
-                            if (res.ok) {
-                              toast.success("レシートを削除しました");
-                              fetchReceipts();
-                            } else {
-                              const data = await res.json();
-                              toast.error(data.error);
-                            }
-                          } catch { toast.error("削除に失敗しました"); }
+                            await readJsonOrThrow(res, "削除に失敗しました");
+                            toast.success("レシートを削除しました");
+                            fetchReceipts();
+                          } catch (e) { toast.error(toUserMessage(e, "削除に失敗しました")); }
                         }}
                         className="flex items-center gap-1 text-[10px] text-[#64748B] hover:text-red-400 transition-colors mt-1"
                       >

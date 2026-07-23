@@ -20,6 +20,8 @@ import {
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
+import { readJsonOrThrow, toUserMessage } from "@/lib/api-response";
+import { WIRE_SAFE_BYTES } from "@/lib/upload-limits";
 
 interface Client {
   id: string;
@@ -74,6 +76,12 @@ export default function KnowledgePage() {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    if (file.size > WIRE_SAFE_BYTES) {
+      toast.error("ファイルサイズが大きすぎます（上限4MB）。ファイルを分割または圧縮してからアップロードしてください。");
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      return;
+    }
+
     setUploading(true);
     try {
       const formData = new FormData();
@@ -87,15 +95,11 @@ export default function KnowledgePage() {
         body: formData,
       });
 
-      const data = await res.json();
-      if (res.ok) {
-        toast.success(`${data.name} をアップロードしました（${data.textLength.toLocaleString()}文字抽出）`);
-        fetchFiles();
-      } else {
-        toast.error(data.error);
-      }
-    } catch {
-      toast.error("アップロードに失敗しました");
+      const data = await readJsonOrThrow<{ name: string; textLength: number }>(res, "アップロードに失敗しました");
+      toast.success(`${data.name} をアップロードしました（${data.textLength.toLocaleString()}文字抽出）`);
+      fetchFiles();
+    } catch (e) {
+      toast.error(toUserMessage(e, "アップロードに失敗しました"));
     } finally {
       setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
