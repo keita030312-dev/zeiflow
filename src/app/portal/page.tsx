@@ -4,6 +4,7 @@
 import { useState, useEffect, useRef, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { compressImage } from "@/lib/image-compress";
+import { readJsonOrThrow } from "@/lib/api-response";
 import { MAX_UPLOAD_BYTES, ALLOWED_IMAGE_TYPES } from "@/lib/upload-limits";
 
 interface UploadResult {
@@ -145,9 +146,7 @@ function PortalPage() {
             method: "POST",
             body: formData,
           });
-          const data = await res.json();
-          if (!res.ok) throw new Error(data.error || "処理に失敗しました");
-          return data as UploadResult;
+          return await readJsonOrThrow<UploadResult>(res, "処理に失敗しました");
         })
       );
       settled.push(...batchResults);

@@ -28,6 +28,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { compressImage } from "@/lib/image-compress";
+import { readJsonOrThrow } from "@/lib/api-response";
 import { MAX_UPLOAD_BYTES, ALLOWED_IMAGE_TYPES } from "@/lib/upload-limits";
 import { STD_ACCOUNTS } from "@/lib/accounts";
 import {
@@ -327,12 +328,7 @@ export default function ReceiptsPage() {
       method: "POST",
       body: formData,
     });
-    const data = await res.json();
-    if (res.ok) {
-      return data;
-    } else {
-      throw new Error(data.error || "読み取りに失敗しました");
-    }
+    return await readJsonOrThrow<ReceiptResult>(res, "読み取りに失敗しました");
   }
 
   const [uploadQuality, setUploadQuality] = useState<"fast" | "accurate" | "ultra">("accurate");
