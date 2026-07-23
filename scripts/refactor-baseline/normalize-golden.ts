@@ -53,7 +53,7 @@ const p = join(GOLDEN_DIR, "ensure-ocr-shape.json");
 if (record || !existsSync(p)) {
   writeFileSync(p, result, "utf8");
   console.log("RECORDED: ensure-ocr-shape.json");
-} else if (readFileSync(p, "utf8") !== result) {
+} else if (readFileSync(p, "utf8").replace(/\r\n/g, "\n") !== result.replace(/\r\n/g, "\n")) {
   fail("ensure-ocr-shape.json ゴールデン不一致");
 }
 

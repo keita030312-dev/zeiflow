@@ -45,14 +45,17 @@ export async function requireAuth(
     return NextResponse.json({ error: "認証が必要です" }, { status: 401 });
   }
 
-  let user: { id: string; organizationId: string | null } | null;
+  let user: { id: string; organizationId: string | null; role: string } | null;
   try {
     user = await prisma.user.findUnique({
       where: { id: payload.id },
-      select: { id: true, organizationId: true },
+      select: { id: true, organizationId: true, role: true },
     });
   } catch {
-    return payload;
+    return NextResponse.json(
+      { error: "認証状態を確認できません。時間をおいて再度お試しください。" },
+      { status: 503 },
+    );
   }
 
   if (!user) {
@@ -76,5 +79,10 @@ export async function requireAuth(
     return NextResponse.json({ error: gate.error }, { status: gate.status });
   }
 
-  return payload;
+  // 権限変更を即時反映するため、JWT発行時ではなくDB上の現在のroleを使う。
+  return {
+    ...payload,
+    role: user.role,
+    ...(dbOrgId ? { orgId: dbOrgId } : {}),
+  };
 }

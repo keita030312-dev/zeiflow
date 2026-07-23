@@ -171,40 +171,49 @@ export async function DELETE(req: NextRequest) {
   try {
     // 事務所ごと削除
     if (orgId) {
-      // 組織に紐づく全データを削除
-      await prisma.auditLog.deleteMany({ where: { organizationId: orgId } });
-      await prisma.exportLog.deleteMany({ where: { organizationId: orgId } });
-      await prisma.journalEntry.deleteMany({ where: { organizationId: orgId } });
-      await prisma.receipt.deleteMany({ where: { organizationId: orgId } });
-      await prisma.clientPortalToken.deleteMany({ where: { organizationId: orgId } });
-      await prisma.knowledgeFile.deleteMany({ where: { organizationId: orgId } });
-      await prisma.client.deleteMany({ where: { organizationId: orgId } });
-      // メンバーのorgIdをnullに（ユーザー自体は残す→再登録不要にするなら削除）
-      const members = await prisma.user.findMany({ where: { organizationId: orgId } });
-      for (const m of members) {
-        await prisma.auditLog.deleteMany({ where: { userId: m.id } });
-        await prisma.exportLog.deleteMany({ where: { userId: m.id } });
-        await prisma.journalEntry.deleteMany({ where: { userId: m.id } });
-        await prisma.receipt.deleteMany({ where: { userId: m.id } });
-        await prisma.clientPortalToken.deleteMany({ where: { userId: m.id } });
-        await prisma.knowledgeFile.deleteMany({ where: { userId: m.id } });
-        await prisma.client.deleteMany({ where: { userId: m.id } });
-        await prisma.user.delete({ where: { id: m.id } });
-      }
-      await prisma.organization.delete({ where: { id: orgId } });
+      await prisma.$transaction(async (tx) => {
+        const members = await tx.user.findMany({
+          where: { organizationId: orgId },
+          select: { id: true },
+        });
+        const memberIds = members.map((member) => member.id);
+
+        // 組織データに加え、加入前に作られたuserId所有データも同じ処理で削除する。
+        const ownedWhere = {
+          OR: [
+            { organizationId: orgId },
+            ...(memberIds.length > 0 ? [{ userId: { in: memberIds } }] : []),
+          ],
+        };
+        await tx.auditLog.deleteMany({ where: ownedWhere });
+        await tx.exportLog.deleteMany({ where: ownedWhere });
+        await tx.journalEntry.deleteMany({ where: ownedWhere });
+        await tx.receipt.deleteMany({ where: ownedWhere });
+        await tx.clientPortalToken.deleteMany({ where: ownedWhere });
+        await tx.knowledgeFile.deleteMany({ where: ownedWhere });
+        await tx.accountMaster.deleteMany({ where: ownedWhere });
+        await tx.client.deleteMany({ where: ownedWhere });
+        if (memberIds.length > 0) {
+          await tx.user.deleteMany({ where: { id: { in: memberIds } } });
+        }
+        await tx.organization.delete({ where: { id: orgId } });
+      });
       return NextResponse.json({ success: true });
     }
 
     // ユーザー単体削除
     if (userId) {
-      await prisma.auditLog.deleteMany({ where: { userId } });
-      await prisma.exportLog.deleteMany({ where: { userId } });
-      await prisma.journalEntry.deleteMany({ where: { userId } });
-      await prisma.receipt.deleteMany({ where: { userId } });
-      await prisma.clientPortalToken.deleteMany({ where: { userId } });
-      await prisma.knowledgeFile.deleteMany({ where: { userId } });
-      await prisma.client.deleteMany({ where: { userId } });
-      await prisma.user.delete({ where: { id: userId } });
+      await prisma.$transaction(async (tx) => {
+        await tx.auditLog.deleteMany({ where: { userId } });
+        await tx.exportLog.deleteMany({ where: { userId } });
+        await tx.journalEntry.deleteMany({ where: { userId } });
+        await tx.receipt.deleteMany({ where: { userId } });
+        await tx.clientPortalToken.deleteMany({ where: { userId } });
+        await tx.knowledgeFile.deleteMany({ where: { userId } });
+        await tx.accountMaster.deleteMany({ where: { userId } });
+        await tx.client.deleteMany({ where: { userId } });
+        await tx.user.delete({ where: { id: userId } });
+      });
       return NextResponse.json({ success: true });
     }
 

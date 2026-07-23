@@ -162,28 +162,33 @@ export async function POST(req: NextRequest) {
       throw new Error("OCR結果が空です");
     }
 
-    // Update receipt with OCR data（最初のレシートのOCR結果を保存）
-    await prisma.receipt.update({
-      where: { id: receipt.id },
-      data: {
-        ocrRaw: JSON.stringify(results[0]?.ocr),
-        status: "COMPLETED",
-      },
-    });
+    // 仕訳作成とCOMPLETED化は一体として保存する。
+    // 複数仕訳の途中で失敗しても、一部の仕訳だけが残らないようにする。
+    const persisted = await prisma.$transaction(async (tx) => {
+      const journalEntries = [];
+      for (const result of results) {
+        const journalEntry = await tx.journalEntry.create({
+          data: buildJournalCreateData(result, {
+            clientId,
+            userId: auth.id,
+            organizationId: auth.orgId,
+            receiptId: receipt.id,
+          }),
+        });
+        journalEntries.push(journalEntry);
+      }
 
-    // Create journal entries for all receipts in the image
-    const journalEntries = [];
-    for (const result of results) {
-      const journalEntry = await prisma.journalEntry.create({
-        data: buildJournalCreateData(result, {
-          clientId,
-          userId: auth.id,
-          organizationId: auth.orgId,
-          receiptId: receipt.id,
-        }),
+      const completedReceipt = await tx.receipt.update({
+        where: { id: receipt.id },
+        data: {
+          ocrRaw: JSON.stringify(results[0]?.ocr),
+          status: "COMPLETED",
+        },
       });
-      journalEntries.push(journalEntry);
-    }
+
+      return { journalEntries, completedReceipt };
+    });
+    const { journalEntries, completedReceipt } = persisted;
 
     // レスポンスのinvoiceNumberを仕訳から取得（フォールバック後の値を反映）
     const ocrWithInvoice = {
@@ -192,7 +197,7 @@ export async function POST(req: NextRequest) {
     };
 
     return NextResponse.json({
-      receipt,
+      receipt: completedReceipt,
       ocr: ocrWithInvoice,
       classification: results[0]?.classification,
       journalEntry: journalEntries[0],

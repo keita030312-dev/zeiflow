@@ -14,7 +14,7 @@ export type OrgGateResult =
  * - isActive=false → 停止中エラー
  * - isApproved=false かつ created_at >= APPROVAL_REQUIRED_FROM → 承認待ちエラー
  * - 個人事業主(organizationId=null) → 通す
- * - カラム未存在などの想定外エラー → 通す(後方互換)
+ * - 組織不明 / DB確認失敗 → 拒否（認可判定は fail closed）
  */
 export async function checkOrgGate(
   organizationId: string | null | undefined,
@@ -25,7 +25,13 @@ export async function checkOrgGate(
     const org = await prisma.organization.findUnique({
       where: { id: organizationId },
     });
-    if (!org) return { ok: true };
+    if (!org) {
+      return {
+        ok: false,
+        error: "所属する事務所が見つかりません。再ログインしてください。",
+        status: 403,
+      };
+    }
     if (org.isActive === false) {
       return {
         ok: false,
@@ -46,6 +52,10 @@ export async function checkOrgGate(
     }
     return { ok: true };
   } catch {
-    return { ok: true };
+    return {
+      ok: false,
+      error: "事務所の状態を確認できません。時間をおいて再度お試しください。",
+      status: 503,
+    };
   }
 }

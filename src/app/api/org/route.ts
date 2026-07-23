@@ -63,6 +63,8 @@ export async function POST(req: NextRequest) {
     data: {
       name: parsed.data.name,
       code: parsed.data.code,
+      // 管理画面で承認されるまで利用不可。スキーマ既定値(true)には依存しない。
+      isApproved: false,
     },
   });
 
@@ -99,6 +101,13 @@ export async function PUT(req: NextRequest) {
 
   // メンバー権限変更
   if (body.memberId && body.role) {
+    const roleResult = z.enum(["ADMIN", "STAFF"]).safeParse(body.role);
+    if (!roleResult.success) {
+      return NextResponse.json(
+        { error: "権限の指定が正しくありません" },
+        { status: 400 },
+      );
+    }
     if (body.memberId === auth.id) {
       return NextResponse.json({ error: "自分自身の権限は変更できません" }, { status: 400 });
     }
@@ -110,7 +119,7 @@ export async function PUT(req: NextRequest) {
     }
     await prisma.user.update({
       where: { id: body.memberId },
-      data: { role: body.role },
+      data: { role: roleResult.data },
     });
     return NextResponse.json({ success: true });
   }
