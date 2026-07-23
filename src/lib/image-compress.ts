@@ -7,9 +7,10 @@
  *     超過するとVercelが413の非JSON応答を返し、Safariで
  *     "The string did not match the expected pattern." になる）
  */
-import { MAX_UPLOAD_BYTES, ALLOWED_IMAGE_TYPES } from "@/lib/upload-limits";
+import { MAX_UPLOAD_BYTES, ALLOWED_IMAGE_TYPES, WIRE_SAFE_BYTES } from "@/lib/upload-limits";
 
-const WIRE_SAFE_BYTES = 4 * 1024 * 1024; // 4MB
+// canvas面積の上限（旧iOS Safariは約16.7Mピクセルで silently 失敗するため余裕を持たせる）
+const MAX_CANVAS_PIXELS = 12 * 1000 * 1000;
 
 // 縮小幅×JPEG品質の組み合わせを上から順に試し、最初に4MB以下になったものを採用
 const COMPRESS_ATTEMPTS: { maxWidth: number; quality: number }[] = [
@@ -46,6 +47,12 @@ function toJpegBlob(
   if (w > maxWidth) {
     h = Math.round((h * maxWidth) / w);
     w = maxWidth;
+  }
+  // 縦長画像（長尺スクショ等）でもcanvas面積上限内に収める
+  if (w * h > MAX_CANVAS_PIXELS) {
+    const scale = Math.sqrt(MAX_CANVAS_PIXELS / (w * h));
+    w = Math.max(1, Math.floor(w * scale));
+    h = Math.max(1, Math.floor(h * scale));
   }
   canvas.width = w;
   canvas.height = h;
