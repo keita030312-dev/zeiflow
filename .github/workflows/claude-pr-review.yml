@@ -1,0 +1,40 @@
+# PRが開かれる/更新されるたびにClaudeが自動レビューしてコメントする
+# 導入手順は同フォルダの README.md 参照
+name: Claude PR Review
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+jobs:
+  claude-review:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: read
+      id-token: write
+      actions: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Run Claude Code Review
+        uses: anthropics/claude-code-action@v1
+        with:
+          # Pro/Max プランなら `claude setup-token` で発行した OAuth トークンを
+          # claude_code_oauth_token に、APIキー課金なら anthropic_api_key を使う(どちらか一方)
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            REPO: ${{ github.repository }}
+            PR NUMBER: ${{ github.event.pull_request.number }}
+            このPRをコードレビューしてください。日本語で。観点:
+            - バグ・ロジックエラー(具体的にどの入力でどう壊れるかを添える)
+            - セキュリティ(.env露出・SQL/コマンドインジェクション・認可漏れ)
+            - 既存機能への影響・後方互換
+            確信のある指摘だけをインラインコメントで残す。推測の指摘は書かない。
+            問題がなければ「LGTM ✅」と1コメントだけ残す。
+          claude_args: |
+            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*)"
