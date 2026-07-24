@@ -71,13 +71,6 @@ export async function POST(req: NextRequest) {
       { status: 409 },
     );
   }
-  if (exportLog.exportedJournals.some((item) => item.receiptId === null)) {
-    return NextResponse.json(
-      { error: "旧形式の出力履歴です。安全のためCSVを再出力してから取込完了にしてください" },
-      { status: 409 },
-    );
-  }
-
   const exportedJournalVersions = new Map(
     exportLog.exportedJournals.map((item) => [
       item.journalEntryId,
