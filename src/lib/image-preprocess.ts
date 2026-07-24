@@ -16,6 +16,33 @@ import sharp from "sharp";
  * - base64: 前処理済み画像のbase64
  * - mimeType: "image/jpeg"
  */
+/**
+ * DB保存用の軽量化(幅1600px上限・JPEG品質75)
+ *
+ * 画像はDBにbase64で保存されるため、原本のまま蓄積するとNeonの容量上限512MBに
+ * 到達し全アップロードが拒否される(2026-07-24に顧客障害)。表示・原本確認には
+ * 十分な品質を保ちつつ、1枚あたり数百KBに抑える。
+ * 圧縮失敗時や圧縮で逆に大きくなる場合は元画像をそのまま返す(Fail-safe)。
+ */
+export async function compressForStorage(
+  buffer: Buffer,
+  originalMime: string,
+): Promise<{ base64: string; mimeType: string }> {
+  try {
+    const out = await sharp(buffer, { failOn: "none" })
+      .rotate() // EXIF Orientationを反映してから回転情報を破棄
+      .resize({ width: 1600, withoutEnlargement: true })
+      .jpeg({ quality: 75, mozjpeg: true })
+      .toBuffer();
+    if (out.length < buffer.length) {
+      return { base64: out.toString("base64"), mimeType: "image/jpeg" };
+    }
+  } catch (err) {
+    console.warn("[compressForStorage] failed, falling back to original:", err);
+  }
+  return { base64: buffer.toString("base64"), mimeType: originalMime || "image/jpeg" };
+}
+
 export async function preprocessForOcr(
   buffer: Buffer,
   originalMime: string,
