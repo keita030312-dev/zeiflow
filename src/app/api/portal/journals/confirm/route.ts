@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requirePortalToken } from "@/lib/portal-auth";
+import { deleteReceiptImageBlob } from "@/lib/receipt-image";
 
 export async function POST(req: NextRequest) {
   const portal = await requirePortalToken(req);
@@ -46,7 +47,12 @@ export async function POST(req: NextRequest) {
             where: { receiptId },
             data: { receiptId: null },
           });
+          const target = await prisma.receipt.findUnique({
+            where: { id: receiptId },
+            select: { imagePath: true },
+          });
           await prisma.receipt.delete({ where: { id: receiptId } }).catch(() => {});
+          await deleteReceiptImageBlob(target?.imagePath);
         }
       }
     }

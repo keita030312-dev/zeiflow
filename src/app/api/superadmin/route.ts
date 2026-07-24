@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { deleteReceiptImageBlob, isBlobUrl } from "@/lib/receipt-image";
 
 // スーパー管理者認証（環境変数のシークレットで認証）
 function requireSuperAdmin(req: NextRequest): boolean {
@@ -171,6 +172,7 @@ export async function DELETE(req: NextRequest) {
   try {
     // 事務所ごと削除
     if (orgId) {
+      const orgBlobPaths: string[] = [];
       await prisma.$transaction(async (tx) => {
         const members = await tx.user.findMany({
           where: { organizationId: orgId },
@@ -185,6 +187,14 @@ export async function DELETE(req: NextRequest) {
             ...(memberIds.length > 0 ? [{ userId: { in: memberIds } }] : []),
           ],
         };
+        const orgReceipts = await tx.receipt.findMany({
+          where: ownedWhere,
+          select: { imagePath: true },
+        });
+        for (const r of orgReceipts) {
+          if (isBlobUrl(r.imagePath)) orgBlobPaths.push(r.imagePath);
+        }
+
         await tx.auditLog.deleteMany({ where: ownedWhere });
         await tx.exportLog.deleteMany({ where: ownedWhere });
         await tx.journalEntry.deleteMany({ where: ownedWhere });
@@ -198,12 +208,24 @@ export async function DELETE(req: NextRequest) {
         }
         await tx.organization.delete({ where: { id: orgId } });
       });
+      // トランザクション成立後にBlobを掃除(ベストエフォート)
+      for (const path of orgBlobPaths) {
+        await deleteReceiptImageBlob(path);
+      }
       return NextResponse.json({ success: true });
     }
 
     // ユーザー単体削除
     if (userId) {
+      const userBlobPaths: string[] = [];
       await prisma.$transaction(async (tx) => {
+        const userReceipts = await tx.receipt.findMany({
+          where: { userId },
+          select: { imagePath: true },
+        });
+        for (const r of userReceipts) {
+          if (isBlobUrl(r.imagePath)) userBlobPaths.push(r.imagePath);
+        }
         await tx.auditLog.deleteMany({ where: { userId } });
         await tx.exportLog.deleteMany({ where: { userId } });
         await tx.journalEntry.deleteMany({ where: { userId } });
@@ -214,6 +236,10 @@ export async function DELETE(req: NextRequest) {
         await tx.client.deleteMany({ where: { userId } });
         await tx.user.delete({ where: { id: userId } });
       });
+      // トランザクション成立後にBlobを掃除(ベストエフォート)
+      for (const path of userBlobPaths) {
+        await deleteReceiptImageBlob(path);
+      }
       return NextResponse.json({ success: true });
     }
 

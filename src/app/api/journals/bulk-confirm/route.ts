@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireAuth, getScope } from "@/lib/auth-middleware";
+import { deleteReceiptImageBlob } from "@/lib/receipt-image";
 import { z } from "zod";
 
 const bulkConfirmSchema = z.object({
@@ -55,10 +56,11 @@ export async function POST(req: NextRequest) {
         });
         const ownedReceipt = await prisma.receipt.findFirst({
           where: { id: receiptId, ...scope },
-          select: { id: true },
+          select: { id: true, imagePath: true },
         });
         if (ownedReceipt) {
           await prisma.receipt.delete({ where: { id: receiptId } }).catch(() => {});
+          await deleteReceiptImageBlob(ownedReceipt.imagePath);
         }
       }
     }

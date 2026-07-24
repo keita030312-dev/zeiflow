@@ -13,6 +13,7 @@ import { reportError } from "@/lib/error-reporter";
 import { parseDocumentKind } from "@/lib/document-kind";
 import { isLikelyMissingSchemaColumn } from "@/lib/prisma-errors";
 import { buildJournalCreateData, validateUploadedImage } from "@/lib/receipt-journal";
+import { uploadReceiptImageToBlob } from "@/lib/receipt-image";
 
 export async function POST(req: NextRequest) {
   const ip = getClientIp(req);
@@ -53,9 +54,12 @@ export async function POST(req: NextRequest) {
       compressForStorage(buffer, originalMime, storageWidth),
     ]);
 
+    // 画像本体はVercel Blobへ。失敗時のみ従来どおりDB(imageData)へ保存
+    const blobUrl = await uploadReceiptImageToBlob(storage.base64, storage.mimeType);
+
     const baseReceiptData = {
-      imagePath: `receipt-${Date.now()}.jpg`,
-      imageData: storage.base64,
+      imagePath: blobUrl ?? `receipt-${Date.now()}.jpg`,
+      imageData: blobUrl ? null : storage.base64,
       imageMime: storage.mimeType,
       clientId: portal.clientId,
       userId: portal.userId,

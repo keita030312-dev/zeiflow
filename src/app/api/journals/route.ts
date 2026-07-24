@@ -4,6 +4,7 @@ import { requireAuth, getScope } from "@/lib/auth-middleware";
 import { recordOcrCorrection } from "@/lib/ai/learning";
 import { withErrorHandler } from "@/lib/api-handler";
 import { deriveTaxRateFromCategories } from "@/lib/tax-categories";
+import { deleteReceiptImageBlob } from "@/lib/receipt-image";
 import { z } from "zod";
 
 const journalSchema = z.object({
@@ -289,10 +290,11 @@ async function handlePut(req: NextRequest) {
       });
       const ownedReceipt = await prisma.receipt.findFirst({
         where: { id: receiptId, ...scope },
-        select: { id: true },
+        select: { id: true, imagePath: true },
       });
       if (ownedReceipt) {
         await prisma.receipt.delete({ where: { id: receiptId } }).catch(() => {});
+        await deleteReceiptImageBlob(ownedReceipt.imagePath);
       }
     }
   }

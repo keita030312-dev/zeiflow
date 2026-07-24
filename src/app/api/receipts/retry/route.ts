@@ -5,6 +5,7 @@ import { processReceipt } from "@/lib/ai/ocr";
 import { preprocessForOcr } from "@/lib/image-preprocess";
 import { reportError } from "@/lib/error-reporter";
 import { buildJournalCreateData } from "@/lib/receipt-journal";
+import { loadReceiptImage } from "@/lib/receipt-image";
 import type { DocumentKind } from "@/generated/prisma/enums";
 
 export async function POST(req: NextRequest) {
@@ -25,7 +26,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "レシートが見つかりません" }, { status: 404 });
   }
 
-  if (!receipt.imageData) {
+  // Blob優先・imageDataフォールバックで画像を取得(移行前後どちらのレシートでも動く)
+  const image = await loadReceiptImage(receipt);
+  if (!image) {
     return NextResponse.json({ error: "画像データがありません" }, { status: 400 });
   }
 
@@ -36,8 +39,7 @@ export async function POST(req: NextRequest) {
     });
 
     // 再処理時もサーバー前処理を適用(精度向上)
-    const originalBuffer = Buffer.from(receipt.imageData, "base64");
-    const preprocessed = await preprocessForOcr(originalBuffer, receipt.imageMime || "image/jpeg");
+    const preprocessed = await preprocessForOcr(image.buffer, image.mime);
 
     const docKind: DocumentKind = receipt.documentKind ?? "RECEIPT";
 

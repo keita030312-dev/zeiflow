@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requirePortalToken } from "@/lib/portal-auth";
+import { loadReceiptImage } from "@/lib/receipt-image";
 
 export async function GET(req: NextRequest) {
   const portal = await requirePortalToken(req);
@@ -14,17 +15,17 @@ export async function GET(req: NextRequest) {
   // このクライアントのレシートのみアクセス可能
   const receipt = await prisma.receipt.findFirst({
     where: { id: receiptId, clientId: portal.clientId },
-    select: { imageData: true, imageMime: true },
+    select: { imagePath: true, imageData: true, imageMime: true },
   });
 
-  if (!receipt?.imageData) {
+  const image = receipt ? await loadReceiptImage(receipt) : null;
+  if (!image) {
     return NextResponse.json({ error: "見つかりません" }, { status: 404 });
   }
 
-  const buffer = Buffer.from(receipt.imageData, "base64");
-  return new NextResponse(buffer, {
+  return new NextResponse(new Uint8Array(image.buffer), {
     headers: {
-      "Content-Type": receipt.imageMime || "image/jpeg",
+      "Content-Type": image.mime,
       "Cache-Control": "private, max-age=86400",
     },
   });
