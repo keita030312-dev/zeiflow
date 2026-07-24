@@ -12,7 +12,7 @@
 - [x] **当日復旧**: ①全138枚をローカルへバックアップ(`C:\Users\keita\zeiflow-image-backup-2026-07-24\`+manifest.json) ②テストデータ43枚+仕訳10件を削除 ③顧客97枚を1600px/JPEG品質75に再圧縮(画像実データ464MB→49MB) ④VACUUM FULLでDB全体490MB→60MB ⑤1MBテスト書き込みで復旧を実測確認。スクリプトは `scripts/backup-receipt-images.mjs` / `scripts/recompress-receipt-images.mjs`
 - [x] **再発防止コード(ブランチ `fix/receipt-image-storage-compression`)**: サーバー側に `compressForStorage`(既定1600px/JPEG q75・INVOICE系は2000pxで電帳法200dpi相当維持・透過は白背景合成・700KB以下のJPEGは無変換で二重劣化防止)を新設し、ダッシュボード/ポータル両アップロードでDB保存前に軽量化。OCRは従来どおり原本からの `preprocessForOcr` 出力を使用(精度影響なし)。クライアント圧縮は従来仕様(4MB超のみ)を維持。実画像テスト5ケース全PASS(4.3MB→476KB等)
 - [x] **恒久対応=Vercel Blob移行も実装完了(PR #20)**: 画像本体をprivate Blobへ・DBは参照URLのみ。本番のBlob失敗時は503で停止しDB容量再発を防止、移行前レシート後方互換・削除全6経路でBlob掃除・URL露出防止。ストア`zeiflow-receipts`作成・トークン全環境設定済み。
-- [ ] 残: private Blob対応を本番反映後、顧客非利用時間帯で `node scripts/migrate-receipt-images-to-blob.mjs` を実行（DB画像と旧public Blobをprivateへ移行し、最後のVACUUM FULL中は数十秒停止）→ `remaining: DB images=0, public blobs=0` を確認
+- [x] **private Blob移行完了**: 97件を全件バックアップ後にprivate Blobへ移行。`DB images=0, public blobs=0`、private Blob 97件、画像実読込成功、DB約9MBを確認。旧public Blob 97件と旧publicストアも削除済み。
 
 ## 📋 2026-07-23 本番障害修正: 大きい画像の413エラー（PR #17）
 

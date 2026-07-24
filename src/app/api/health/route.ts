@@ -73,7 +73,6 @@ export async function GET(req: NextRequest) {
   };
   const requiredEnvs = [
     "DATABASE_URL",
-    "ANTHROPIC_API_KEY",
     "NEXTAUTH_SECRET",
     "BLOB_READ_WRITE_TOKEN",
   ];
@@ -83,27 +82,30 @@ export async function GET(req: NextRequest) {
     envCheck.message = `Missing env vars: ${missing.join(", ")}`;
   }
 
-  const anthropicCheck = await check(
-    "anthropic",
-    async () => {
-      const key = process.env.ANTHROPIC_API_KEY;
-      if (!key || !key.startsWith("sk-ant-")) {
-        throw new Error("ANTHROPIC_API_KEY missing or invalid");
-      }
-      // 軽量な疎通確認(404でもAPI到達はOK)
-      const res = await fetch("https://api.anthropic.com/v1/models", {
-        method: "GET",
-        headers: {
-          "x-api-key": key,
-          "anthropic-version": "2023-06-01",
+  // APIキーはユーザー別設定を利用できるため、グローバルキーは任意。
+  // グローバルキーがある環境だけ外部疎通を確認する。
+  const anthropicCheck: CheckResult = process.env.ANTHROPIC_API_KEY
+    ? await check(
+        "anthropic",
+        async () => {
+          const key = process.env.ANTHROPIC_API_KEY;
+          if (!key?.startsWith("sk-ant-")) {
+            throw new Error("ANTHROPIC_API_KEY invalid");
+          }
+          const res = await fetch("https://api.anthropic.com/v1/models", {
+            method: "GET",
+            headers: {
+              "x-api-key": key,
+              "anthropic-version": "2023-06-01",
+            },
+          });
+          if (res.status >= 500) {
+            throw new Error(`Anthropic API returned ${res.status}`);
+          }
         },
-      });
-      if (res.status >= 500) {
-        throw new Error(`Anthropic API returned ${res.status}`);
-      }
-    },
-    8000,
-  );
+        8000,
+      )
+    : { ok: true, message: "using per-user API keys" };
 
   const resendCheck: CheckResult = process.env.RESEND_API_KEY
     ? await check(
