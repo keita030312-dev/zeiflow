@@ -27,6 +27,7 @@ export async function GET(req: NextRequest) {
       importConfirmedAt: true,
       deleteAfter: true,
       client: { select: { name: true, code: true } },
+      _count: { select: { exportedJournals: true } },
     },
   });
 
@@ -45,6 +46,11 @@ export async function POST(req: NextRequest) {
   const scope = getScope(auth);
   const exportLog = await prisma.exportLog.findFirst({
     where: { id: parsed.data.exportLogId, ...scope },
+    include: {
+      exportedJournals: {
+        select: { journalEntryId: true, journalUpdatedAt: true },
+      },
+    },
   });
   if (!exportLog) {
     return NextResponse.json({ error: "出力履歴が見つかりません" }, { status: 404 });
@@ -55,37 +61,45 @@ export async function POST(req: NextRequest) {
       { status: 409 },
     );
   }
+  if (exportLog.exportedJournals.length === 0) {
+    return NextResponse.json(
+      { error: "旧形式の出力履歴です。安全のためCSVを再出力してから取込完了にしてください" },
+      { status: 409 },
+    );
+  }
 
+  const exportedJournalVersions = new Map(
+    exportLog.exportedJournals.map((item) => [
+      item.journalEntryId,
+      item.journalUpdatedAt,
+    ]),
+  );
+  const exportedJournalIds = new Set(exportedJournalVersions.keys());
   const candidates = await prisma.receipt.findMany({
     where: {
       clientId: exportLog.clientId,
       ...scope,
       journalEntries: {
-        some: {
-          date: { gte: exportLog.periodStart, lte: exportLog.periodEnd },
-          updatedAt: { lte: exportLog.exportedAt },
-        },
+        some: { id: { in: [...exportedJournalIds] } },
       },
     },
     select: {
       id: true,
       journalEntries: {
-        select: { date: true, updatedAt: true, isConfirmed: true },
+        select: { id: true, updatedAt: true },
       },
     },
   });
 
-  // 一枚から複数仕訳が生じる場合も、全仕訳が当該CSVに含まれ確定済みの
-  // レシートだけを削除予約する。部分出力された画像は残す。
+  // 一枚から複数仕訳が生じる場合も、全仕訳が当該CSVへ実際に含まれ、
+  // CSV出力後に編集されていないレシートだけを削除予約する。
   const receiptIds = candidates
     .filter(({ journalEntries }) =>
       journalEntries.length > 0 &&
       journalEntries.every(
         (entry) =>
-          entry.isConfirmed &&
-          entry.date >= exportLog.periodStart &&
-          entry.date <= exportLog.periodEnd &&
-          entry.updatedAt <= exportLog.exportedAt,
+          exportedJournalIds.has(entry.id) &&
+          entry.updatedAt <= exportedJournalVersions.get(entry.id)!,
       ),
     )
     .map(({ id }) => id);

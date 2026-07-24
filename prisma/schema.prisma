@@ -193,10 +193,11 @@ model JournalEntry {
   receiptId         String?  @map("receipt_id")
   organizationId    String?  @map("organization_id")
 
-  client       Client        @relation(fields: [clientId], references: [id])
-  user         User          @relation(fields: [userId], references: [id])
-  receipt      Receipt?      @relation(fields: [receiptId], references: [id])
-  organization Organization? @relation(fields: [organizationId], references: [id])
+  client          Client            @relation(fields: [clientId], references: [id])
+  user            User              @relation(fields: [userId], references: [id])
+  receipt         Receipt?          @relation(fields: [receiptId], references: [id])
+  organization    Organization?     @relation(fields: [organizationId], references: [id])
+  exportSnapshots ExportedJournal[]
 
   @@index([organizationId, clientId, date])
   @@index([organizationId, isConfirmed, date])
@@ -218,13 +219,28 @@ model ExportLog {
   userId            String       @map("user_id")
   organizationId    String?      @map("organization_id")
 
-  client       Client        @relation(fields: [clientId], references: [id])
-  user         User          @relation(fields: [userId], references: [id])
-  organization Organization? @relation(fields: [organizationId], references: [id])
+  client           Client            @relation(fields: [clientId], references: [id])
+  user             User              @relation(fields: [userId], references: [id])
+  organization     Organization?     @relation(fields: [organizationId], references: [id])
+  exportedJournals ExportedJournal[]
 
   @@index([organizationId, clientId, exportedAt])
   @@index([importConfirmedAt])
   @@map("export_logs")
+}
+
+model ExportedJournal {
+  exportLogId      String   @map("export_log_id")
+  journalEntryId   String   @map("journal_entry_id")
+  journalUpdatedAt DateTime @map("journal_updated_at")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  exportLog    ExportLog    @relation(fields: [exportLogId], references: [id], onDelete: Cascade)
+  journalEntry JournalEntry @relation(fields: [journalEntryId], references: [id], onDelete: Cascade)
+
+  @@id([exportLogId, journalEntryId])
+  @@index([journalEntryId])
+  @@map("exported_journals")
 }
 
 enum ExportFormat {

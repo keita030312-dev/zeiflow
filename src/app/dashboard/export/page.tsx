@@ -31,6 +31,7 @@ interface ExportHistory {
   importConfirmedAt: string | null;
   deleteAfter: string | null;
   client: { name: string; code: string };
+  _count: { exportedJournals: number };
 }
 
 const formatOptions = [
@@ -469,6 +470,13 @@ export default function ExportPage() {
                           削除予定 {new Date(log.deleteAfter).toLocaleDateString("ja-JP")}
                         </span>
                       )}
+                    </div>
+                  ) : log._count.exportedJournals === 0 ? (
+                    <div className="text-xs text-amber-400">
+                      旧履歴
+                      <span className="block text-[#94A3B8]">
+                        安全のため再出力してください
+                      </span>
                     </div>
                   ) : (
                     <Button

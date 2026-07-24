@@ -74,26 +74,32 @@ export async function POST(req: NextRequest) {
       orderBy: { date: "asc" },
     });
 
-    // 出力済み除外: 同一顧客・同一形式の過去出力期間に含まれる仕訳を除く
+    // 出力済み除外: 過去CSVへ実際に含めた仕訳IDだけを除く。
+    // 期間推定だと、編集・再出力・部分出力で誤って除外されるため使わない。
     if (excludeExported && allEntries.length > 0) {
       const formatKey = format.toUpperCase() as "YAYOI" | "MONEYFORWARD" | "FREEE";
-      const prevLogs = await prisma.exportLog.findMany({
-        where: { clientId, format: formatKey, ...scope },
-        select: {
-          periodStart: true,
-          periodEnd: true,
-          exportedAt: true,
+      const snapshots = await prisma.exportedJournal.findMany({
+        where: {
+          exportLog: { clientId, format: formatKey, ...scope },
+          journalEntryId: { in: allEntries.map((entry) => entry.id) },
         },
+        select: { journalEntryId: true, journalUpdatedAt: true },
       });
-      if (prevLogs.length > 0) {
-        allEntries = allEntries.filter((e) =>
-          !prevLogs.some(
-            (log) =>
-              e.date >= log.periodStart &&
-              e.date <= log.periodEnd &&
-              e.updatedAt <= log.exportedAt,
-          )
-        );
+      if (snapshots.length > 0) {
+        const lastExportedVersions = new Map<string, Date>();
+        for (const snapshot of snapshots) {
+          const previous = lastExportedVersions.get(snapshot.journalEntryId);
+          if (!previous || snapshot.journalUpdatedAt > previous) {
+            lastExportedVersions.set(
+              snapshot.journalEntryId,
+              snapshot.journalUpdatedAt,
+            );
+          }
+        }
+        allEntries = allEntries.filter((entry) => {
+          const exportedVersion = lastExportedVersions.get(entry.id);
+          return !exportedVersion || entry.updatedAt > exportedVersion;
+        });
       }
     }
 
@@ -150,9 +156,9 @@ export async function POST(req: NextRequest) {
         );
     }
 
-    // Log the export
-    try {
-      await prisma.exportLog.create({
+    // CSVに含めた仕訳IDを出力履歴と同一トランザクションで保存する。
+    await prisma.$transaction(async (tx) => {
+      const exportLog = await tx.exportLog.create({
         data: {
           format: format.toUpperCase() as "YAYOI" | "MONEYFORWARD" | "FREEE",
           periodType:
@@ -169,9 +175,14 @@ export async function POST(req: NextRequest) {
           ...(auth.orgId ? { organizationId: auth.orgId } : {}),
         },
       });
-    } catch {
-      // エクスポートログの保存失敗はCSV出力を止めない
-    }
+      await tx.exportedJournal.createMany({
+        data: entries.map((entry) => ({
+          exportLogId: exportLog.id,
+          journalEntryId: entry.id,
+          journalUpdatedAt: entry.updatedAt,
+        })),
+      });
+    });
 
     const commonHeaders = {
       "Content-Disposition": `attachment; filename="${filename}"`,
