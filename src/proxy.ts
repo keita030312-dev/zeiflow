@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { checkRateLimit } from "@/lib/rate-limit";
 
-const publicPaths = ["/", "/login", "/login.html", "/register", "/terms", "/privacy", "/forgot-password", "/reset-password", "/api/auth/login", "/api/auth/register", "/api/auth/login-form", "/api/auth/reset-request", "/api/auth/reset-password", "/api/contact", "/api/go/anthropic", "/portal", "/api/health", "/api/errors", "/superadmin", "/api/superadmin", "/api/admin/migrate-independent-export-snapshots", "/api/cron/cleanup-imported-receipts"];
+const publicPaths = ["/", "/login", "/login.html", "/register", "/terms", "/privacy", "/forgot-password", "/reset-password", "/api/auth/login", "/api/auth/register", "/api/auth/login-form", "/api/auth/reset-request", "/api/auth/reset-password", "/api/contact", "/api/go/anthropic", "/portal", "/api/health", "/api/errors", "/superadmin", "/api/superadmin", "/api/cron/cleanup-imported-receipts"];
 
 export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
