@@ -21,6 +21,18 @@ interface Client {
   name: string;
 }
 
+interface ExportHistory {
+  id: string;
+  format: "YAYOI" | "MONEYFORWARD" | "FREEE";
+  periodStart: string;
+  periodEnd: string;
+  recordCount: number;
+  exportedAt: string;
+  importConfirmedAt: string | null;
+  deleteAfter: string | null;
+  client: { name: string; code: string };
+}
+
 const formatOptions = [
   {
     value: "yayoi",
@@ -51,12 +63,20 @@ export default function ExportPage() {
   const [endDate, setEndDate] = useState("");
   const [exporting, setExporting] = useState(false);
   const [excludeExported, setExcludeExported] = useState(false);
+  const [exportHistory, setExportHistory] = useState<ExportHistory[]>([]);
+  const [confirmingImport, setConfirmingImport] = useState<string | null>(null);
+
+  async function loadExportHistory() {
+    const res = await fetch("/api/import-confirmations");
+    if (res.ok) setExportHistory(await res.json());
+  }
 
   useEffect(() => {
     fetch("/api/clients")
       .then((r) => r.json())
       .then(setClients)
       .catch(() => {});
+    loadExportHistory().catch(() => {});
 
     // Default dates (current month)
     const now = new Date();
@@ -152,11 +172,37 @@ export default function ExportPage() {
       toast.success(
         `${formatLabel}形式で${recordCount}件の仕訳をエクスポートしました`
       );
+      await loadExportHistory();
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       toast.error("エクスポートに失敗しました: " + msg);
     } finally {
       setExporting(false);
+    }
+  }
+
+  async function confirmAccountingImport(log: ExportHistory) {
+    if (!window.confirm(
+      `${log.client.name}の出力データが会計ソフトへ正常に取り込まれたことを確認しましたか？\n\n確認すると、対象画像は30日後に自動削除されます。`,
+    )) return;
+
+    setConfirmingImport(log.id);
+    try {
+      const res = await fetch("/api/import-confirmations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ exportLogId: log.id }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "取込完了の記録に失敗しました");
+      toast.success(
+        `取込完了を記録しました。画像${data.scheduledReceiptCount}件を30日後の削除対象にしました。`,
+      );
+      await loadExportHistory();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "取込完了の記録に失敗しました");
+    } finally {
+      setConfirmingImport(null);
     }
   }
 
@@ -386,6 +432,62 @@ export default function ExportPage() {
           </Card>
         </div>
       </div>
+
+      <Card className="glass-card border-[rgba(212,175,55,0.08)] mt-6">
+        <CardHeader>
+          <CardTitle className="text-base text-[#F1F5F9]">
+            会計ソフト取込状況
+          </CardTitle>
+          <p className="text-xs text-[#94A3B8]">
+            CSVを会計ソフトへ正常に取り込んだ後で完了にしてください。対象画像は完了確認から30日後に自動削除されます。
+          </p>
+        </CardHeader>
+        <CardContent>
+          {exportHistory.length === 0 ? (
+            <p className="text-sm text-[#64748B]">CSV出力履歴はありません。</p>
+          ) : (
+            <div className="space-y-2">
+              {exportHistory.map((log) => (
+                <div
+                  key={log.id}
+                  className="flex flex-col md:flex-row md:items-center gap-3 rounded-lg border border-[rgba(212,175,55,0.08)] bg-[rgba(15,23,42,0.35)] p-3"
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm text-[#F1F5F9]">
+                      {log.client.name} ・ {log.format} ・ {log.recordCount}件
+                    </p>
+                    <p className="text-xs text-[#64748B]">
+                      {new Date(log.periodStart).toLocaleDateString("ja-JP")}～{new Date(log.periodEnd).toLocaleDateString("ja-JP")}
+                      {" / "}出力 {new Date(log.exportedAt).toLocaleString("ja-JP")}
+                    </p>
+                  </div>
+                  {log.importConfirmedAt ? (
+                    <div className="text-xs text-emerald-400">
+                      取込確認済み
+                      {log.deleteAfter && (
+                        <span className="block text-[#94A3B8]">
+                          削除予定 {new Date(log.deleteAfter).toLocaleDateString("ja-JP")}
+                        </span>
+                      )}
+                    </div>
+                  ) : (
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      disabled={confirmingImport === log.id}
+                      onClick={() => confirmAccountingImport(log)}
+                      className="bg-[#334155] text-[#F1F5F9] hover:bg-[#475569]"
+                    >
+                      <CheckCircle2 className="h-4 w-4 mr-2" />
+                      {confirmingImport === log.id ? "記録中..." : "取込完了"}
+                    </Button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

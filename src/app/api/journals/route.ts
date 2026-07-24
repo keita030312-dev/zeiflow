@@ -4,7 +4,7 @@ import { requireAuth, getScope } from "@/lib/auth-middleware";
 import { recordOcrCorrection } from "@/lib/ai/learning";
 import { withErrorHandler } from "@/lib/api-handler";
 import { deriveTaxRateFromCategories } from "@/lib/tax-categories";
-import { deleteReceiptImageBlob, sanitizeImagePath } from "@/lib/receipt-image";
+import { sanitizeImagePath } from "@/lib/receipt-image";
 import { z } from "zod";
 
 const journalSchema = z.object({
@@ -279,33 +279,6 @@ async function handlePut(req: NextRequest) {
     }).catch((err) => {
       console.error("[learning] failed to record correction:", err);
     });
-  }
-
-  // 確定された場合、レシートを削除（履歴から消去＆容量節約）
-  // 同じレシートに紐づく他の仕訳がすべて確定済みの場合のみレシート本体を削除
-  if (data.isConfirmed === true && entry.receiptId) {
-    const receiptId = entry.receiptId;
-    const remaining = await prisma.journalEntry.count({
-      where: { receiptId, isConfirmed: false, ...scope },
-    });
-    if (remaining === 0) {
-      await prisma.journalEntry.updateMany({
-        where: { receiptId, ...scope },
-        data: { receiptId: null },
-      });
-      const ownedReceipt = await prisma.receipt.findFirst({
-        where: { id: receiptId, ...scope },
-        select: { id: true, imagePath: true },
-      });
-      if (ownedReceipt) {
-        // 行削除が成立した場合のみBlobを消す(失敗時に画像だけ喪失させない)
-        const deleted = await prisma.receipt
-          .delete({ where: { id: receiptId } })
-          .then(() => true)
-          .catch(() => false);
-        if (deleted) await deleteReceiptImageBlob(ownedReceipt.imagePath);
-      }
-    }
   }
 
   return NextResponse.json(entry);

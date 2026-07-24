@@ -1,4 +1,10 @@
 {
+  "crons": [
+    {
+      "path": "/api/cron/cleanup-imported-receipts",
+      "schedule": "15 18 * * *"
+    }
+  ],
   "functions": {
     "src/app/api/receipts/route.ts": { "maxDuration": 60 },
     "src/app/api/receipts/retry/route.ts": { "maxDuration": 60 },
