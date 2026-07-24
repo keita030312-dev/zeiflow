@@ -31,7 +31,6 @@ interface ExportHistory {
   importConfirmedAt: string | null;
   deleteAfter: string | null;
   client: { name: string; code: string };
-  _count: { exportedJournals: number };
 }
 
 const formatOptions = [
@@ -445,7 +444,9 @@ export default function ExportPage() {
         </CardHeader>
         <CardContent>
           {exportHistory.length === 0 ? (
-            <p className="text-sm text-[#64748B]">CSV出力履歴はありません。</p>
+            <p className="text-sm text-[#64748B]">
+              取込管理対象のCSV出力履歴はありません。CSVを出力するとここに表示されます。
+            </p>
           ) : (
             <div className="space-y-2">
               {exportHistory.map((log) => (
@@ -470,13 +471,6 @@ export default function ExportPage() {
                           削除予定 {new Date(log.deleteAfter).toLocaleDateString("ja-JP")}
                         </span>
                       )}
-                    </div>
-                  ) : log._count.exportedJournals === 0 ? (
-                    <div className="text-xs text-amber-400">
-                      旧履歴
-                      <span className="block text-[#94A3B8]">
-                        安全のため再出力してください
-                      </span>
                     </div>
                   ) : (
                     <Button

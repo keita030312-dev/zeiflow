@@ -14,7 +14,10 @@ export async function GET(req: NextRequest) {
   if (auth instanceof NextResponse) return auth;
 
   const logs = await prisma.exportLog.findMany({
-    where: getScope(auth),
+    where: {
+      ...getScope(auth),
+      exportedJournals: { some: {} },
+    },
     orderBy: { exportedAt: "desc" },
     take: 30,
     select: {
@@ -27,7 +30,6 @@ export async function GET(req: NextRequest) {
       importConfirmedAt: true,
       deleteAfter: true,
       client: { select: { name: true, code: true } },
-      _count: { select: { exportedJournals: true } },
     },
   });
 
@@ -67,7 +69,7 @@ export async function POST(req: NextRequest) {
   }
   if (exportLog.exportedJournals.length === 0) {
     return NextResponse.json(
-      { error: "旧形式の出力履歴です。安全のためCSVを再出力してから取込完了にしてください" },
+      { error: "この出力履歴は取込完了の対象外です。CSVを再出力してください" },
       { status: 409 },
     );
   }
