@@ -7,6 +7,9 @@ import { generateMoneyForwardCsv } from "@/lib/csv/moneyforward";
 import { generateFreeeCsv } from "@/lib/csv/freee";
 import type { JournalEntryData, ClientTaxInfo, CsvFormat, PeriodType } from "@/types";
 
+const SNAPSHOT_QUERY_CHUNK = 5_000;
+const SNAPSHOT_WRITE_CHUNK = 1_000;
+
 export async function POST(req: NextRequest) {
   try {
     const auth = await requireAuth(req);
@@ -78,13 +81,24 @@ export async function POST(req: NextRequest) {
     // 期間推定だと、編集・再出力・部分出力で誤って除外されるため使わない。
     if (excludeExported && allEntries.length > 0) {
       const formatKey = format.toUpperCase() as "YAYOI" | "MONEYFORWARD" | "FREEE";
-      const snapshots = await prisma.exportedJournal.findMany({
-        where: {
-          exportLog: { clientId, format: formatKey, ...scope },
-          journalEntryId: { in: allEntries.map((entry) => entry.id) },
-        },
-        select: { journalEntryId: true, journalUpdatedAt: true },
-      });
+      const snapshots: {
+        journalEntryId: string;
+        journalUpdatedAt: Date;
+      }[] = [];
+      const entryIds = allEntries.map((entry) => entry.id);
+      for (let offset = 0; offset < entryIds.length; offset += SNAPSHOT_QUERY_CHUNK) {
+        snapshots.push(
+          ...(await prisma.exportedJournal.findMany({
+            where: {
+              exportLog: { clientId, format: formatKey, ...scope },
+              journalEntryId: {
+                in: entryIds.slice(offset, offset + SNAPSHOT_QUERY_CHUNK),
+              },
+            },
+            select: { journalEntryId: true, journalUpdatedAt: true },
+          })),
+        );
+      }
       if (snapshots.length > 0) {
         const lastExportedVersions = new Map<string, Date>();
         for (const snapshot of snapshots) {
@@ -175,13 +189,18 @@ export async function POST(req: NextRequest) {
           ...(auth.orgId ? { organizationId: auth.orgId } : {}),
         },
       });
-      await tx.exportedJournal.createMany({
-        data: entries.map((entry) => ({
-          exportLogId: exportLog.id,
-          journalEntryId: entry.id,
-          journalUpdatedAt: entry.updatedAt,
-        })),
-      });
+      for (let offset = 0; offset < entries.length; offset += SNAPSHOT_WRITE_CHUNK) {
+        await tx.exportedJournal.createMany({
+          data: entries
+            .slice(offset, offset + SNAPSHOT_WRITE_CHUNK)
+            .map((entry) => ({
+              exportLogId: exportLog.id,
+              journalEntryId: entry.id,
+              receiptId: entry.receiptId,
+              journalUpdatedAt: entry.updatedAt,
+            })),
+        });
+      }
     });
 
     const commonHeaders = {

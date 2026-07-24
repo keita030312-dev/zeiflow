@@ -193,11 +193,10 @@ model JournalEntry {
   receiptId         String?  @map("receipt_id")
   organizationId    String?  @map("organization_id")
 
-  client          Client            @relation(fields: [clientId], references: [id])
-  user            User              @relation(fields: [userId], references: [id])
-  receipt         Receipt?          @relation(fields: [receiptId], references: [id])
-  organization    Organization?     @relation(fields: [organizationId], references: [id])
-  exportSnapshots ExportedJournal[]
+  client       Client        @relation(fields: [clientId], references: [id])
+  user         User          @relation(fields: [userId], references: [id])
+  receipt      Receipt?      @relation(fields: [receiptId], references: [id])
+  organization Organization? @relation(fields: [organizationId], references: [id])
 
   @@index([organizationId, clientId, date])
   @@index([organizationId, isConfirmed, date])
@@ -232,14 +231,15 @@ model ExportLog {
 model ExportedJournal {
   exportLogId      String   @map("export_log_id")
   journalEntryId   String   @map("journal_entry_id")
+  receiptId        String?  @map("receipt_id")
   journalUpdatedAt DateTime @map("journal_updated_at")
   createdAt        DateTime @default(now()) @map("created_at")
 
-  exportLog    ExportLog    @relation(fields: [exportLogId], references: [id], onDelete: Cascade)
-  journalEntry JournalEntry @relation(fields: [journalEntryId], references: [id], onDelete: Cascade)
+  exportLog ExportLog @relation(fields: [exportLogId], references: [id], onDelete: Cascade)
 
   @@id([exportLogId, journalEntryId])
   @@index([journalEntryId])
+  @@index([receiptId])
   @@map("exported_journals")
 }
 

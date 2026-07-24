@@ -48,7 +48,11 @@ export async function POST(req: NextRequest) {
     where: { id: parsed.data.exportLogId, ...scope },
     include: {
       exportedJournals: {
-        select: { journalEntryId: true, journalUpdatedAt: true },
+        select: {
+          journalEntryId: true,
+          journalUpdatedAt: true,
+          receiptId: true,
+        },
       },
     },
   });
@@ -67,6 +71,12 @@ export async function POST(req: NextRequest) {
       { status: 409 },
     );
   }
+  if (exportLog.exportedJournals.some((item) => item.receiptId === null)) {
+    return NextResponse.json(
+      { error: "旧形式の出力履歴です。安全のためCSVを再出力してから取込完了にしてください" },
+      { status: 409 },
+    );
+  }
 
   const exportedJournalVersions = new Map(
     exportLog.exportedJournals.map((item) => [
@@ -75,13 +85,18 @@ export async function POST(req: NextRequest) {
     ]),
   );
   const exportedJournalIds = new Set(exportedJournalVersions.keys());
+  const snapshotIdsByReceipt = new Map<string, Set<string>>();
+  for (const item of exportLog.exportedJournals) {
+    if (!item.receiptId) continue;
+    const ids = snapshotIdsByReceipt.get(item.receiptId) ?? new Set<string>();
+    ids.add(item.journalEntryId);
+    snapshotIdsByReceipt.set(item.receiptId, ids);
+  }
   const candidates = await prisma.receipt.findMany({
     where: {
       clientId: exportLog.clientId,
       ...scope,
-      journalEntries: {
-        some: { id: { in: [...exportedJournalIds] } },
-      },
+      id: { in: [...snapshotIdsByReceipt.keys()] },
     },
     select: {
       id: true,
@@ -94,14 +109,19 @@ export async function POST(req: NextRequest) {
   // 一枚から複数仕訳が生じる場合も、全仕訳が当該CSVへ実際に含まれ、
   // CSV出力後に編集されていないレシートだけを削除予約する。
   const receiptIds = candidates
-    .filter(({ journalEntries }) =>
-      journalEntries.length > 0 &&
-      journalEntries.every(
-        (entry) =>
-          exportedJournalIds.has(entry.id) &&
-          entry.updatedAt <= exportedJournalVersions.get(entry.id)!,
-      ),
-    )
+    .filter(({ id, journalEntries }) => {
+      const snapshotIds = snapshotIdsByReceipt.get(id);
+      return (
+        snapshotIds &&
+        journalEntries.length === snapshotIds.size &&
+        journalEntries.every(
+          (entry) =>
+            snapshotIds.has(entry.id) &&
+            exportedJournalIds.has(entry.id) &&
+            entry.updatedAt <= exportedJournalVersions.get(entry.id)!,
+        )
+      );
+    })
     .map(({ id }) => id);
 
   const importedAt = new Date();
