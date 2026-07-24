@@ -56,34 +56,37 @@ export async function POST(req: NextRequest) {
       throw new Error("OCR結果が空です");
     }
 
-    // ocrRaw は UI 側(dashboard/receipts page の getStoreName)が単一オブジェクト前提で
-     // parsed.storeName を読むため、normal upload / portal upload と同じ単一形式を保つ。
-     // マルチレシート画像でも全件の仕訳は下の Promise.all で作成されるので情報は失わない。
-    await prisma.receipt.update({
-      where: { id: receiptId },
-      data: {
-        ocrRaw: JSON.stringify(results[0]?.ocr),
-        status: "COMPLETED",
-      },
-    });
+    // 既存仕訳の置換とCOMPLETED化を一体で保存する。
+    // 新規仕訳作成に失敗した場合は、削除した既存仕訳もロールバックされる。
+    const createdJournals = await prisma.$transaction(async (tx) => {
+      await tx.journalEntry.deleteMany({
+        where: { receiptId, ...scope },
+      });
 
-    // retry なので既存仕訳を一旦全削除して再作成（results が増減しても整合性を保つ）
-    await prisma.journalEntry.deleteMany({
-      where: { receiptId },
-    });
-
-    const createdJournals = await Promise.all(
-      results.map((result) =>
-        prisma.journalEntry.create({
-          data: buildJournalCreateData(result, {
-            clientId: receipt.clientId,
-            userId: auth.id,
-            organizationId: auth.orgId,
-            receiptId,
+      const created = [];
+      for (const result of results) {
+        created.push(
+          await tx.journalEntry.create({
+            data: buildJournalCreateData(result, {
+              clientId: receipt.clientId,
+              userId: auth.id,
+              organizationId: auth.orgId,
+              receiptId,
+            }),
           }),
-        })
-      )
-    );
+        );
+      }
+
+      // ocrRawはUIが単一オブジェクト前提で読むため先頭結果を保存する。
+      await tx.receipt.update({
+        where: { id: receiptId },
+        data: {
+          ocrRaw: JSON.stringify(results[0]?.ocr),
+          status: "COMPLETED",
+        },
+      });
+      return created;
+    });
 
     return NextResponse.json({
       success: true,

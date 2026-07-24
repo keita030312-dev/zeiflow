@@ -13,7 +13,11 @@ import { reportError } from "@/lib/error-reporter";
 import { parseDocumentKind } from "@/lib/document-kind";
 import { isLikelyMissingSchemaColumn } from "@/lib/prisma-errors";
 import { buildJournalCreateData, validateUploadedImage } from "@/lib/receipt-journal";
-import { uploadReceiptImageToBlob, deleteReceiptImageBlob } from "@/lib/receipt-image";
+import {
+  uploadReceiptImageToBlob,
+  deleteReceiptImageBlob,
+  isReceiptImageStorageError,
+} from "@/lib/receipt-image";
 
 export async function POST(req: NextRequest) {
   const ip = getClientIp(req);
@@ -55,7 +59,7 @@ export async function POST(req: NextRequest) {
       compressForStorage(buffer, originalMime, storageWidth),
     ]);
 
-    // 画像本体はVercel Blobへ。失敗時のみ従来どおりDB(imageData)へ保存
+    // 画像本体はprivate Vercel Blobへ。本番では失敗時にDBへ退避せず503を返す。
     blobUrl = await uploadReceiptImageToBlob(storage.base64, storage.mimeType);
 
     const baseReceiptData = {
@@ -98,41 +102,43 @@ export async function POST(req: NextRequest) {
       throw new Error("OCR結果が空です");
     }
 
-    // レシートにOCR結果を保存
-    await prisma.receipt.update({
-      where: { id: receipt.id },
-      data: {
-        ocrRaw: JSON.stringify(results[0]?.ocr),
-        status: "COMPLETED",
-      },
-    });
+    // 仕訳作成・レシート完了・監査ログを一体で保存し、部分成功を残さない。
+    const journalEntries = await prisma.$transaction(async (tx) => {
+      const created = [];
+      for (const result of results) {
+        created.push(
+          await tx.journalEntry.create({
+            data: buildJournalCreateData(result, {
+              clientId: portal.clientId,
+              userId: portal.userId,
+              organizationId: portal.organizationId,
+              receiptId: receipt.id,
+            }),
+          }),
+        );
+      }
 
-    // 仕訳エントリ作成（複数レシート分）
-    const journalEntries = [];
-    for (const result of results) {
-      const journalEntry = await prisma.journalEntry.create({
-        data: buildJournalCreateData(result, {
-          clientId: portal.clientId,
-          userId: portal.userId,
-          organizationId: portal.organizationId,
-          receiptId: receipt.id,
-        }),
+      await tx.receipt.update({
+        where: { id: receipt.id },
+        data: {
+          ocrRaw: JSON.stringify(results[0]?.ocr),
+          status: "COMPLETED",
+        },
       });
-      journalEntries.push(journalEntry);
-    }
+
+      await tx.auditLog.create({
+        data: {
+          action: "PORTAL_RECEIPT_UPLOAD",
+          detail: `ポータルからレシートアップロード: ${receipt.id}（${results.length}件の仕訳）`,
+          ipAddress: ip,
+          userId: portal.userId,
+          ...(portal.organizationId ? { organizationId: portal.organizationId } : {}),
+        },
+      });
+      return created;
+    });
 
     const result = results[0];
-
-    // 監査ログ
-    await prisma.auditLog.create({
-      data: {
-        action: "PORTAL_RECEIPT_UPLOAD",
-        detail: `ポータルからレシートアップロード: ${receipt.id}（${results.length}件の仕訳）`,
-        ipAddress: ip,
-        userId: portal.userId,
-        ...(portal.organizationId ? { organizationId: portal.organizationId } : {}),
-      },
-    });
 
     return NextResponse.json({
       receiptId: receipt.id,
@@ -162,6 +168,12 @@ export async function POST(req: NextRequest) {
       await deleteReceiptImageBlob(blobUrl);
     }
     const message = error instanceof Error ? error.message : String(error);
+    if (isReceiptImageStorageError(error)) {
+      return NextResponse.json(
+        { error: "画像ストレージを一時的に利用できません。時間をおいて再度お試しください。" },
+        { status: 503 },
+      );
+    }
 
     // APIキー未設定の場合のわかりやすいメッセージ
     if (message.includes("APIキー") || message.includes("api_key") || message.includes("authentication")) {

@@ -12,7 +12,12 @@ import { reportError } from "@/lib/error-reporter";
 import { parseDocumentKind } from "@/lib/document-kind";
 import { isLikelyMissingSchemaColumn } from "@/lib/prisma-errors";
 import { buildJournalCreateData, validateUploadedImage } from "@/lib/receipt-journal";
-import { uploadReceiptImageToBlob, deleteReceiptImageBlob, sanitizeImagePath } from "@/lib/receipt-image";
+import {
+  uploadReceiptImageToBlob,
+  deleteReceiptImageBlob,
+  sanitizeImagePath,
+  isReceiptImageStorageError,
+} from "@/lib/receipt-image";
 
 export async function GET(req: NextRequest) {
   const auth = await requireAuth(req);
@@ -137,7 +142,7 @@ export async function POST(req: NextRequest) {
       compressForStorage(buffer, originalMime, storageWidth),
     ]);
 
-    // 画像本体はVercel Blobへ。失敗時のみ従来どおりDB(imageData)へ保存
+    // 画像本体はprivate Vercel Blobへ。本番では失敗時にDBへ退避せず503を返す。
     blobUrl = await uploadReceiptImageToBlob(storage.base64, storage.mimeType);
 
     const baseReceiptData = {
@@ -235,6 +240,12 @@ export async function POST(req: NextRequest) {
       await deleteReceiptImageBlob(blobUrl);
     }
     const message = error instanceof Error ? error.message : String(error);
+    if (isReceiptImageStorageError(error)) {
+      return NextResponse.json(
+        { error: "画像ストレージを一時的に利用できません。時間をおいて再度お試しください。" },
+        { status: 503 },
+      );
+    }
     if (isLikelyMissingSchemaColumn(error, "document_kind")) {
       return NextResponse.json(
         {

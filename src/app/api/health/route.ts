@@ -71,7 +71,12 @@ export async function GET(req: NextRequest) {
     ok: true,
     message: undefined,
   };
-  const requiredEnvs = ["DATABASE_URL", "ANTHROPIC_API_KEY", "NEXTAUTH_SECRET"];
+  const requiredEnvs = [
+    "DATABASE_URL",
+    "ANTHROPIC_API_KEY",
+    "NEXTAUTH_SECRET",
+    "BLOB_READ_WRITE_TOKEN",
+  ];
   const missing = requiredEnvs.filter((k) => !process.env[k]);
   if (missing.length > 0) {
     envCheck.ok = false;
