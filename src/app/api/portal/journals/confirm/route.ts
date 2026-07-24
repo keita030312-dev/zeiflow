@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requirePortalToken } from "@/lib/portal-auth";
+import { deleteReceiptImageBlob } from "@/lib/receipt-image";
 
 export async function POST(req: NextRequest) {
   const portal = await requirePortalToken(req);
@@ -46,7 +47,16 @@ export async function POST(req: NextRequest) {
             where: { receiptId },
             data: { receiptId: null },
           });
-          await prisma.receipt.delete({ where: { id: receiptId } }).catch(() => {});
+          const target = await prisma.receipt.findUnique({
+            where: { id: receiptId },
+            select: { imagePath: true },
+          });
+          // 行削除が成立した場合のみBlobを消す(失敗時に画像だけ喪失させない)
+          const deleted = await prisma.receipt
+            .delete({ where: { id: receiptId } })
+            .then(() => true)
+            .catch(() => false);
+          if (deleted) await deleteReceiptImageBlob(target?.imagePath);
         }
       }
     }

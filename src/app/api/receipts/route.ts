@@ -12,6 +12,7 @@ import { reportError } from "@/lib/error-reporter";
 import { parseDocumentKind } from "@/lib/document-kind";
 import { isLikelyMissingSchemaColumn } from "@/lib/prisma-errors";
 import { buildJournalCreateData, validateUploadedImage } from "@/lib/receipt-journal";
+import { uploadReceiptImageToBlob, deleteReceiptImageBlob, sanitizeImagePath } from "@/lib/receipt-image";
 
 export async function GET(req: NextRequest) {
   const auth = await requireAuth(req);
@@ -53,7 +54,10 @@ export async function GET(req: NextRequest) {
       select: receiptSelect,
     });
 
-    return NextResponse.json(receipts);
+    // Blob URLはクライアントへ露出させない(表示は認証付き /api/uploads 経由)
+    return NextResponse.json(
+      receipts.map((r) => ({ ...r, imagePath: sanitizeImagePath(r.imagePath) }))
+    );
   } catch (e) {
     if (isLikelyMissingSchemaColumn(e, "document_kind")) {
       const receipts = await prisma.receipt.findMany({
@@ -74,7 +78,9 @@ export async function GET(req: NextRequest) {
           journalEntries: true,
         },
       });
-      return NextResponse.json(receipts);
+      return NextResponse.json(
+        receipts.map((r) => ({ ...r, imagePath: sanitizeImagePath(r.imagePath) }))
+      );
     }
     throw e;
   }
@@ -85,6 +91,7 @@ export async function POST(req: NextRequest) {
   if (auth instanceof NextResponse) return auth;
 
   let receiptId: string | null = null;
+  let blobUrl: string | null = null;
   try {
     const formData = await req.formData();
     const file = formData.get("file") as File;
@@ -130,9 +137,12 @@ export async function POST(req: NextRequest) {
       compressForStorage(buffer, originalMime, storageWidth),
     ]);
 
+    // 画像本体はVercel Blobへ。失敗時のみ従来どおりDB(imageData)へ保存
+    blobUrl = await uploadReceiptImageToBlob(storage.base64, storage.mimeType);
+
     const baseReceiptData = {
-      imagePath: `receipt-${Date.now()}.jpg`,
-      imageData: storage.base64,
+      imagePath: blobUrl ?? `receipt-${Date.now()}.jpg`,
+      imageData: blobUrl ? null : storage.base64,
       imageMime: storage.mimeType,
       clientId,
       userId: auth.id,
@@ -220,6 +230,9 @@ export async function POST(req: NextRequest) {
     // 処理中のレシートをERRORに更新
     if (receiptId) {
       await prisma.receipt.update({ where: { id: receiptId }, data: { status: "ERROR" } }).catch(() => {});
+    } else {
+      // レシート行が作られる前に失敗した場合はBlobを孤児にしない
+      await deleteReceiptImageBlob(blobUrl);
     }
     const message = error instanceof Error ? error.message : String(error);
     if (isLikelyMissingSchemaColumn(error, "document_kind")) {
@@ -259,6 +272,7 @@ export async function DELETE(req: NextRequest) {
     data: { receiptId: null },
   });
   await prisma.receipt.delete({ where: { id } });
+  await deleteReceiptImageBlob(receipt.imagePath);
 
   return NextResponse.json({ success: true });
 }

@@ -13,6 +13,7 @@ import { reportError } from "@/lib/error-reporter";
 import { parseDocumentKind } from "@/lib/document-kind";
 import { isLikelyMissingSchemaColumn } from "@/lib/prisma-errors";
 import { buildJournalCreateData, validateUploadedImage } from "@/lib/receipt-journal";
+import { uploadReceiptImageToBlob, deleteReceiptImageBlob } from "@/lib/receipt-image";
 
 export async function POST(req: NextRequest) {
   const ip = getClientIp(req);
@@ -20,6 +21,7 @@ export async function POST(req: NextRequest) {
   if (portal instanceof NextResponse) return portal;
 
   let receiptId: string | null = null;
+  let blobUrl: string | null = null;
   try {
     const formData = await req.formData();
     const file = formData.get("file") as File;
@@ -53,9 +55,12 @@ export async function POST(req: NextRequest) {
       compressForStorage(buffer, originalMime, storageWidth),
     ]);
 
+    // 画像本体はVercel Blobへ。失敗時のみ従来どおりDB(imageData)へ保存
+    blobUrl = await uploadReceiptImageToBlob(storage.base64, storage.mimeType);
+
     const baseReceiptData = {
-      imagePath: `receipt-${Date.now()}.jpg`,
-      imageData: storage.base64,
+      imagePath: blobUrl ?? `receipt-${Date.now()}.jpg`,
+      imageData: blobUrl ? null : storage.base64,
       imageMime: storage.mimeType,
       clientId: portal.clientId,
       userId: portal.userId,
@@ -152,6 +157,9 @@ export async function POST(req: NextRequest) {
     reportError(error instanceof Error ? error : new Error(String(error)), { source: "portal-receipts" });
     if (receiptId) {
       await prisma.receipt.update({ where: { id: receiptId }, data: { status: "ERROR" } }).catch(() => {});
+    } else {
+      // レシート行が作られる前に失敗した場合はBlobを孤児にしない
+      await deleteReceiptImageBlob(blobUrl);
     }
     const message = error instanceof Error ? error.message : String(error);
 

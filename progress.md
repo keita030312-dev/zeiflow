@@ -1,6 +1,13 @@
 # 進捗状況（progress.md）
 
-最終更新：2026-07-23
+最終更新：2026-07-24
+
+## 📋 2026-07-24 本番障害対応: NeonのDB容量512MB超過で全アップロード拒否
+
+- [x] **障害の原因特定**: レシート画像をbase64でDB(receiptsテーブル)に直接保存する設計のため、無圧縮画像(1枚平均3〜4MB)が蓄積してNeon無料枠512MBに到達。「could not extend file because project size limit (512 MB) has been exceeded」で全アップロード拒否。7/23の413(通信経路)とは別問題
+- [x] **当日復旧**: ①全138枚をローカルへバックアップ(`C:\Users\keita\zeiflow-image-backup-2026-07-24\`+manifest.json) ②テストデータ43枚+仕訳10件を削除 ③顧客97枚を1600px/JPEG品質75に再圧縮(画像実データ464MB→49MB) ④VACUUM FULLでDB全体490MB→60MB ⑤1MBテスト書き込みで復旧を実測確認。スクリプトは `scripts/backup-receipt-images.mjs` / `scripts/recompress-receipt-images.mjs`
+- [x] **再発防止コード(ブランチ `fix/receipt-image-storage-compression`)**: サーバー側に `compressForStorage`(既定1600px/JPEG q75・INVOICE系は2000pxで電帳法200dpi相当維持・透過は白背景合成・700KB以下のJPEGは無変換で二重劣化防止)を新設し、ダッシュボード/ポータル両アップロードでDB保存前に軽量化。OCRは従来どおり原本からの `preprocessForOcr` 出力を使用(精度影響なし)。クライアント圧縮は従来仕様(4MB超のみ)を維持。実画像テスト5ケース全PASS(4.3MB→476KB等)
+- [ ] 残: PRマージ+本番反映、顧客へ再送案内、**恒久対応=レシート画像のVercel Blob移行**(DB外保存。設計・実装は別タスクで着手予定)
 
 ## 📋 2026-07-23 本番障害修正: 大きい画像の413エラー（PR #17）
 
