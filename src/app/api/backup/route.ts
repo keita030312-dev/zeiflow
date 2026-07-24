@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireAuth, getScope } from "@/lib/auth-middleware";
+import { sanitizeImagePath } from "@/lib/receipt-image";
 
 export async function GET(req: NextRequest) {
   try {
@@ -42,7 +43,12 @@ export async function GET(req: NextRequest) {
       user: { id: auth.id, email: auth.email },
       data: {
         clients,
-        journals,
+        // 公開Blob URLは平文バックアップに残さない(画像は /api/uploads 経由で参照)
+        journals: journals.map((j) =>
+          j.receipt
+            ? { ...j, receipt: { ...j.receipt, imagePath: sanitizeImagePath(j.receipt.imagePath) } }
+            : j
+        ),
         exportLogs,
         auditLogs,
       },

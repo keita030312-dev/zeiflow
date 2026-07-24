@@ -48,10 +48,19 @@ for (const { id } of ids) {
   }
 
   // 画像が今もあるレシートだけ更新。0件なら並行削除されたのでBlobを掃除
-  const upd = await c.query(
-    "update receipts set image_path=$1, image_data=null where id=$2 and image_data is not null",
-    [url, id]
-  );
+  // UPDATE自体の失敗(接続断等)でもBlobを孤児にしない
+  let upd;
+  try {
+    upd = await c.query(
+      "update receipts set image_path=$1, image_data=null where id=$2 and image_data is not null",
+      [url, id]
+    );
+  } catch (e) {
+    console.log(`FAIL update ${id}: ${e.message}`);
+    await del(url).catch(() => {});
+    failed++;
+    continue;
+  }
   if (upd.rowCount === 0) {
     await del(url).catch(() => {});
     continue;
@@ -63,6 +72,8 @@ for (const { id } of ids) {
 console.log(`done: ${done} migrated, ${failed} failed`);
 
 if (failed === 0) {
+  // 注意: VACUUM FULLはACCESS EXCLUSIVEロック(実行中は全アップロード・表示が停止)。
+  // 数十秒で終わる想定だが、顧客が使わない時間帯に実行すること。
   console.log("vacuum full receipts...");
   await c.query("vacuum full receipts");
 }

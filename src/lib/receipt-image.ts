@@ -18,7 +18,13 @@ import { put, del } from "@vercel/blob";
 import { randomUUID } from "node:crypto";
 
 export function isBlobUrl(path: string | null | undefined): path is string {
-  return !!path && path.startsWith("https://");
+  if (!path || !path.startsWith("https://")) return false;
+  // Vercel Blobのストアホストのみ許容(将来imagePathに外部値が入ってもSSRFさせない)
+  try {
+    return new URL(path).hostname.endsWith(".public.blob.vercel-storage.com");
+  } catch {
+    return false;
+  }
 }
 
 /** 一覧APIなどでクライアントへ返す前にBlob URLを隠す */
@@ -60,7 +66,8 @@ export async function loadReceiptImage(receipt: {
 }): Promise<{ buffer: Buffer; mime: string } | null> {
   if (isBlobUrl(receipt.imagePath)) {
     try {
-      const res = await fetch(receipt.imagePath);
+      // Blob側の一時障害で関数がハングしないよう上限を切る
+      const res = await fetch(receipt.imagePath, { signal: AbortSignal.timeout(10_000) });
       if (res.ok) {
         return {
           buffer: Buffer.from(await res.arrayBuffer()),

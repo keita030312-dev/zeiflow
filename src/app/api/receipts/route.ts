@@ -91,6 +91,7 @@ export async function POST(req: NextRequest) {
   if (auth instanceof NextResponse) return auth;
 
   let receiptId: string | null = null;
+  let blobUrl: string | null = null;
   try {
     const formData = await req.formData();
     const file = formData.get("file") as File;
@@ -137,7 +138,7 @@ export async function POST(req: NextRequest) {
     ]);
 
     // 画像本体はVercel Blobへ。失敗時のみ従来どおりDB(imageData)へ保存
-    const blobUrl = await uploadReceiptImageToBlob(storage.base64, storage.mimeType);
+    blobUrl = await uploadReceiptImageToBlob(storage.base64, storage.mimeType);
 
     const baseReceiptData = {
       imagePath: blobUrl ?? `receipt-${Date.now()}.jpg`,
@@ -229,6 +230,9 @@ export async function POST(req: NextRequest) {
     // 処理中のレシートをERRORに更新
     if (receiptId) {
       await prisma.receipt.update({ where: { id: receiptId }, data: { status: "ERROR" } }).catch(() => {});
+    } else {
+      // レシート行が作られる前に失敗した場合はBlobを孤児にしない
+      await deleteReceiptImageBlob(blobUrl);
     }
     const message = error instanceof Error ? error.message : String(error);
     if (isLikelyMissingSchemaColumn(error, "document_kind")) {

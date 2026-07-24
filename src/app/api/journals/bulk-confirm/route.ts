@@ -59,8 +59,12 @@ export async function POST(req: NextRequest) {
           select: { id: true, imagePath: true },
         });
         if (ownedReceipt) {
-          await prisma.receipt.delete({ where: { id: receiptId } }).catch(() => {});
-          await deleteReceiptImageBlob(ownedReceipt.imagePath);
+          // 行削除が成立した場合のみBlobを消す(失敗時に画像だけ喪失させない)
+          const deleted = await prisma.receipt
+            .delete({ where: { id: receiptId } })
+            .then(() => true)
+            .catch(() => false);
+          if (deleted) await deleteReceiptImageBlob(ownedReceipt.imagePath);
         }
       }
     }

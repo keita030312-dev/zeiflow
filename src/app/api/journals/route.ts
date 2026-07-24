@@ -4,7 +4,7 @@ import { requireAuth, getScope } from "@/lib/auth-middleware";
 import { recordOcrCorrection } from "@/lib/ai/learning";
 import { withErrorHandler } from "@/lib/api-handler";
 import { deriveTaxRateFromCategories } from "@/lib/tax-categories";
-import { deleteReceiptImageBlob } from "@/lib/receipt-image";
+import { deleteReceiptImageBlob, sanitizeImagePath } from "@/lib/receipt-image";
 import { z } from "zod";
 
 const journalSchema = z.object({
@@ -110,7 +110,12 @@ async function handleGet(req: NextRequest) {
   ]);
 
   return NextResponse.json({
-    entries,
+    // Blob URLはクライアントへ露出させない(表示は認証付き /api/uploads 経由)
+    entries: entries.map((e) =>
+      e.receipt
+        ? { ...e, receipt: { ...e.receipt, imagePath: sanitizeImagePath(e.receipt.imagePath) } }
+        : e
+    ),
     total,
     page,
     totalPages: Math.ceil(total / limit),
@@ -293,8 +298,12 @@ async function handlePut(req: NextRequest) {
         select: { id: true, imagePath: true },
       });
       if (ownedReceipt) {
-        await prisma.receipt.delete({ where: { id: receiptId } }).catch(() => {});
-        await deleteReceiptImageBlob(ownedReceipt.imagePath);
+        // 行削除が成立した場合のみBlobを消す(失敗時に画像だけ喪失させない)
+        const deleted = await prisma.receipt
+          .delete({ where: { id: receiptId } })
+          .then(() => true)
+          .catch(() => false);
+        if (deleted) await deleteReceiptImageBlob(ownedReceipt.imagePath);
       }
     }
   }
