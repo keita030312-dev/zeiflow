@@ -324,8 +324,13 @@ export default function ReceiptsPage() {
   // PCからのドラッグ&ドロップ取込(顧客要望 2026-07-24)
   function handleDragOver(e: React.DragEvent) {
     e.preventDefault();
-    // 処理中・結果表示中は受け付けない(既存のクリック選択UIと同じ状態のみ)
-    if (processing || result || batchRows.length > 0) return;
+    // ファイル以外のドラッグ(テキスト選択等)には反応しない
+    if (!e.dataTransfer.types.includes("Files")) return;
+    // 処理中・カメラ・結果表示中は受け付けない(既存のクリック選択UIと同じ状態のみ)
+    if (processing || result || batchRows.length > 0 || useCamera) {
+      e.dataTransfer.dropEffect = "none";
+      return;
+    }
     setIsDragging(true);
   }
 
@@ -339,9 +344,22 @@ export default function ReceiptsPage() {
   function handleDrop(e: React.DragEvent) {
     e.preventDefault();
     setIsDragging(false);
-    if (processing || result || batchRows.length > 0) return;
+    if (processing || result || batchRows.length > 0 || useCamera) return;
     if (e.dataTransfer.files.length > 0) addFiles(e.dataTransfer.files);
   }
+
+  // ドロップゾーン外への誤ドロップでブラウザが画像ファイルへ遷移して入力が飛ぶのを防ぐ
+  useEffect(() => {
+    function preventWindowDrop(e: DragEvent) {
+      e.preventDefault();
+    }
+    window.addEventListener("dragover", preventWindowDrop);
+    window.addEventListener("drop", preventWindowDrop);
+    return () => {
+      window.removeEventListener("dragover", preventWindowDrop);
+      window.removeEventListener("drop", preventWindowDrop);
+    };
+  }, []);
 
   async function uploadSingleFile(file: File, quality: "fast" | "accurate" | "ultra" = "fast"): Promise<ReceiptResult | null> {
     const compressed = await compressImage(file);

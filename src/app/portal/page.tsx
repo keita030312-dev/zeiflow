@@ -124,7 +124,12 @@ function PortalPage() {
   // PCからのドラッグ&ドロップ取込(顧客要望 2026-07-24)
   function handleDragOver(e: React.DragEvent) {
     e.preventDefault();
-    if (uploading) return;
+    // ファイル以外のドラッグ(テキスト選択等)には反応しない
+    if (!e.dataTransfer.types.includes("Files")) return;
+    if (uploading) {
+      e.dataTransfer.dropEffect = "none";
+      return;
+    }
     setIsDragging(true);
   }
 
@@ -141,6 +146,19 @@ function PortalPage() {
     if (uploading) return;
     if (e.dataTransfer.files.length > 0) addFiles(e.dataTransfer.files);
   }
+
+  // ドロップゾーン外への誤ドロップでブラウザが画像ファイルへ遷移して入力が飛ぶのを防ぐ
+  useEffect(() => {
+    function preventWindowDrop(e: DragEvent) {
+      e.preventDefault();
+    }
+    window.addEventListener("dragover", preventWindowDrop);
+    window.addEventListener("drop", preventWindowDrop);
+    return () => {
+      window.removeEventListener("dragover", preventWindowDrop);
+      window.removeEventListener("drop", preventWindowDrop);
+    };
+  }, []);
 
   function removeFile(index: number) {
     URL.revokeObjectURL(previews[index]);
