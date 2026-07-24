@@ -2,7 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requirePortalToken } from "@/lib/portal-auth";
 import { processReceipt } from "@/lib/ai/ocr";
-import { preprocessForOcr, compressForStorage } from "@/lib/image-preprocess";
+import {
+  preprocessForOcr,
+  compressForStorage,
+  STORAGE_MAX_WIDTH_RECEIPT,
+  STORAGE_MAX_WIDTH_INVOICE,
+} from "@/lib/image-preprocess";
 import { getClientIp } from "@/lib/rate-limit";
 import { reportError } from "@/lib/error-reporter";
 import { parseDocumentKind } from "@/lib/document-kind";
@@ -40,9 +45,12 @@ export async function POST(req: NextRequest) {
     }
 
     // サーバーサイド画像前処理(OCR精度向上)。DB保存は軽量化した画像(容量上限対策)
+    // A4請求書は電帳法の200dpi相当を満たす幅で保存する
+    const storageWidth =
+      documentKind === "INVOICE" ? STORAGE_MAX_WIDTH_INVOICE : STORAGE_MAX_WIDTH_RECEIPT;
     const [preprocessed, storage] = await Promise.all([
       preprocessForOcr(buffer, originalMime),
-      compressForStorage(buffer, originalMime),
+      compressForStorage(buffer, originalMime, storageWidth),
     ]);
 
     const baseReceiptData = {

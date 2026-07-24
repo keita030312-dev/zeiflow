@@ -2,32 +2,22 @@
  * 画像をレシートOCR向けに圧縮する
  * - 最大幅1600pxにリサイズ（登録番号等の小さい文字を最大限保持）
  * - カラーのまま、加工なしで送信
- *
- * サイズ方針は2段構え:
- * 1. STORAGE_TARGET_BYTES(600KB)以下を目指して品質を段階的に下げる。
- *    画像はDBにbase64で保存されるため、無圧縮のまま蓄積するとNeonの
- *    容量上限512MBに到達し全アップロードが拒否される(2026-07-24に顧客障害)。
- * 2. どうしても縮まない場合もWIRE_SAFE_BYTES(4MB)以下は保証する。
- *    VercelのBody上限4.5MB超過は413の非JSON応答になり、Safariで
- *    "The string did not match the expected pattern." になる。
+ * - JPEG 0.92品質から段階的に下げ、必ず4MB以下に収めて送信する
+ *   （VercelのリクエストBody上限4.5MBをmultipartオーバーヘッド込みで確実に下回る値。
+ *     超過するとVercelが413の非JSON応答を返し、Safariで
+ *     "The string did not match the expected pattern." になる）
  */
 import { MAX_UPLOAD_BYTES, ALLOWED_IMAGE_TYPES, WIRE_SAFE_BYTES } from "@/lib/upload-limits";
-
-// これ以下なら再圧縮しない(小さい画像を二重劣化させない)
-const SKIP_BYTES = 500 * 1024;
-
-// DB保存を見据えた1枚あたりの目標サイズ
-const STORAGE_TARGET_BYTES = 600 * 1024;
 
 // canvas面積の上限（旧iOS Safariは約16.7Mピクセルで silently 失敗するため余裕を持たせる）
 const MAX_CANVAS_PIXELS = 12 * 1000 * 1000;
 
-// 縮小幅×JPEG品質の組み合わせを上から順に試し、最初に目標以下になったものを採用
+// 縮小幅×JPEG品質の組み合わせを上から順に試し、最初に4MB以下になったものを採用
 const COMPRESS_ATTEMPTS: { maxWidth: number; quality: number }[] = [
-  { maxWidth: 1600, quality: 0.8 },
-  { maxWidth: 1600, quality: 0.65 },
-  { maxWidth: 1400, quality: 0.6 },
-  { maxWidth: 1200, quality: 0.55 },
+  { maxWidth: 1600, quality: 0.92 },
+  { maxWidth: 1600, quality: 0.75 },
+  { maxWidth: 1600, quality: 0.6 },
+  { maxWidth: 1200, quality: 0.6 },
 ];
 
 function loadImage(file: File): Promise<HTMLImageElement> {
@@ -87,8 +77,8 @@ export async function compressImage(file: File): Promise<File> {
     throw new Error("画像サイズが大きすぎます。10MB以下の画像を選択してください。");
   }
 
-  // 既に十分小さいJPEG/PNGはそのまま(再圧縮による劣化を防ぐ)
-  if (file.size <= SKIP_BYTES && (file.type === "image/jpeg" || file.type === "image/png")) {
+  // 4MB以下ならそのまま送信（圧縮による劣化を防ぐ）
+  if (file.size <= WIRE_SAFE_BYTES && (file.type === "image/jpeg" || file.type === "image/png")) {
     return file;
   }
 
@@ -103,25 +93,15 @@ export async function compressImage(file: File): Promise<File> {
     );
   }
 
-  let smallest: Blob | null = null;
   for (const { maxWidth, quality } of COMPRESS_ATTEMPTS) {
     const blob = await toJpegBlob(img, maxWidth, quality);
-    if (!blob) continue;
-    if (blob.size <= STORAGE_TARGET_BYTES) {
-      smallest = blob;
-      break;
+    if (blob && blob.size <= WIRE_SAFE_BYTES) {
+      return new File([blob], file.name, { type: "image/jpeg" });
     }
-    if (!smallest || blob.size < smallest.size) smallest = blob;
   }
 
-  // 圧縮しても原本より大きくなるなら原本を使う(原本が送信可能な場合のみ)
-  if (smallest && smallest.size < file.size && smallest.size <= WIRE_SAFE_BYTES) {
-    return new File([smallest], file.name, { type: "image/jpeg" });
-  }
+  // 圧縮が全滅しても原本が4MB以下なら送れる
   if (file.size <= WIRE_SAFE_BYTES) return file;
-  if (smallest && smallest.size <= WIRE_SAFE_BYTES) {
-    return new File([smallest], file.name, { type: "image/jpeg" });
-  }
   throw new Error(
     "画像を送信可能なサイズに縮小できませんでした。スクリーンショットを撮って送信してください。"
   );
