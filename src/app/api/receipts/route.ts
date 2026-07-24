@@ -2,7 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireAuth, getScope } from "@/lib/auth-middleware";
 import { processReceipt } from "@/lib/ai/ocr";
-import { preprocessForOcr } from "@/lib/image-preprocess";
+import {
+  preprocessForOcr,
+  compressForStorage,
+  STORAGE_MAX_WIDTH_RECEIPT,
+  STORAGE_MAX_WIDTH_INVOICE,
+} from "@/lib/image-preprocess";
 import { reportError } from "@/lib/error-reporter";
 import { parseDocumentKind } from "@/lib/document-kind";
 import { isLikelyMissingSchemaColumn } from "@/lib/prisma-errors";
@@ -113,17 +118,22 @@ export async function POST(req: NextRequest) {
 
     const bytes = await file.arrayBuffer();
     const buffer = Buffer.from(bytes);
-    const originalBase64 = buffer.toString("base64");
     const originalMime = file.type || "image/jpeg";
 
     // サーバーサイド画像前処理(OCR精度向上)
-    // - DB保存は元画像(人間レビュー用)、OCRには前処理済み画像を渡す
-    const preprocessed = await preprocessForOcr(buffer, originalMime);
+    // - OCRには前処理済み画像、DB保存は軽量化した画像(容量上限対策)を使う
+    // - A4請求書は電帳法の200dpi相当を満たす幅で保存する
+    const storageWidth =
+      documentKind === "INVOICE" ? STORAGE_MAX_WIDTH_INVOICE : STORAGE_MAX_WIDTH_RECEIPT;
+    const [preprocessed, storage] = await Promise.all([
+      preprocessForOcr(buffer, originalMime),
+      compressForStorage(buffer, originalMime, storageWidth),
+    ]);
 
     const baseReceiptData = {
       imagePath: `receipt-${Date.now()}.jpg`,
-      imageData: originalBase64,
-      imageMime: originalMime,
+      imageData: storage.base64,
+      imageMime: storage.mimeType,
       clientId,
       userId: auth.id,
       ...(auth.orgId ? { organizationId: auth.orgId } : {}),
