@@ -140,6 +140,7 @@ export default function ReceiptsPage() {
   >("RECEIPT");
   const [preview, setPreview] = useState<string | null>(null);
   const [files, setFiles] = useState<File[]>([]);
+  const [isDragging, setIsDragging] = useState(false);
   const [processing, setProcessing] = useState(false);
   const [result, setResult] = useState<ReceiptResult | null>(null);
   const [useCamera, setUseCamera] = useState(false);
@@ -284,9 +285,7 @@ export default function ReceiptsPage() {
     );
   }
 
-  function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
-    const selected = e.target.files;
-    if (!selected || selected.length === 0) return;
+  function addFiles(selected: Iterable<File>) {
     const newFiles = Array.from(selected).filter((file) => {
       if (!ALLOWED_IMAGE_TYPES.has(file.type)) {
         toast.error(`${file.name}: 対応外の形式です（JPG/PNG/WEBP/GIFのみ）`);
@@ -314,6 +313,34 @@ export default function ReceiptsPage() {
     }
     if (fileInputRef.current) fileInputRef.current.value = "";
     setResult(null);
+  }
+
+  function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const selected = e.target.files;
+    if (!selected || selected.length === 0) return;
+    addFiles(selected);
+  }
+
+  // PCからのドラッグ&ドロップ取込(顧客要望 2026-07-24)
+  function handleDragOver(e: React.DragEvent) {
+    e.preventDefault();
+    // 処理中・結果表示中は受け付けない(既存のクリック選択UIと同じ状態のみ)
+    if (processing || result || batchRows.length > 0) return;
+    setIsDragging(true);
+  }
+
+  function handleDragLeave(e: React.DragEvent) {
+    e.preventDefault();
+    // 子要素への出入りで消えないよう、領域の外へ出た時だけ解除
+    if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+    setIsDragging(false);
+  }
+
+  function handleDrop(e: React.DragEvent) {
+    e.preventDefault();
+    setIsDragging(false);
+    if (processing || result || batchRows.length > 0) return;
+    if (e.dataTransfer.files.length > 0) addFiles(e.dataTransfer.files);
   }
 
   async function uploadSingleFile(file: File, quality: "fast" | "accurate" | "ultra" = "fast"): Promise<ReceiptResult | null> {
@@ -723,8 +750,18 @@ export default function ReceiptsPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Upload Area */}
-        <div>
-          <Card className="glass-card border-[rgba(212,175,55,0.08)]">
+        <div
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+        >
+          <Card
+            className={`glass-card transition-colors ${
+              isDragging
+                ? "border-[#D4AF37] bg-[rgba(212,175,55,0.05)]"
+                : "border-[rgba(212,175,55,0.08)]"
+            }`}
+          >
             <CardHeader>
               <CardTitle className="text-base text-[#F1F5F9]">
                 撮影・アップロード
@@ -843,11 +880,17 @@ export default function ReceiptsPage() {
                 <div className="space-y-3">
                   <div
                     onClick={() => fileInputRef.current?.click()}
-                    className="border-2 border-dashed border-[rgba(212,175,55,0.15)] rounded-xl p-12 text-center cursor-pointer hover:border-[rgba(212,175,55,0.3)] hover:bg-[rgba(212,175,55,0.02)] transition-all"
+                    className={`border-2 border-dashed rounded-xl p-12 text-center cursor-pointer transition-all ${
+                      isDragging
+                        ? "border-[#D4AF37] bg-[rgba(212,175,55,0.08)]"
+                        : "border-[rgba(212,175,55,0.15)] hover:border-[rgba(212,175,55,0.3)] hover:bg-[rgba(212,175,55,0.02)]"
+                    }`}
                   >
                     <ImageIcon className="h-10 w-10 text-[#475569] mx-auto mb-3" />
                     <p className="text-sm text-[#94A3B8]">
-                      クリックしてファイルを選択
+                      {isDragging
+                        ? "ここにドロップして読み込み"
+                        : "クリックして選択、またはここにドラッグ&ドロップ"}
                     </p>
                     <p className="text-xs text-[#475569] mt-1">
                       JPG, PNG対応 (複数選択可)

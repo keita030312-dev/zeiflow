@@ -38,6 +38,7 @@ function PortalPage() {
 
   // Upload state
   const [files, setFiles] = useState<File[]>([]);
+  const [isDragging, setIsDragging] = useState(false);
   const [previews, setPreviews] = useState<string[]>([]);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<{ current: number; total: number } | null>(null);
@@ -88,6 +89,10 @@ function PortalPage() {
   function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
     const selected = e.target.files;
     if (!selected || selected.length === 0) return;
+    addFiles(selected);
+  }
+
+  function addFiles(selected: Iterable<File>) {
     const newFiles = Array.from(selected).filter((file) => {
       if (!ALLOWED_IMAGE_TYPES.has(file.type)) {
         alert(`${file.name}: 対応外の形式です（JPG/PNG/WEBP/GIFのみ）`);
@@ -114,6 +119,27 @@ function PortalPage() {
     setResults([]);
     setUploadErrors([]);
     if (fileInputRef.current) fileInputRef.current.value = "";
+  }
+
+  // PCからのドラッグ&ドロップ取込(顧客要望 2026-07-24)
+  function handleDragOver(e: React.DragEvent) {
+    e.preventDefault();
+    if (uploading) return;
+    setIsDragging(true);
+  }
+
+  function handleDragLeave(e: React.DragEvent) {
+    e.preventDefault();
+    // 子要素への出入りで消えないよう、領域の外へ出た時だけ解除
+    if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+    setIsDragging(false);
+  }
+
+  function handleDrop(e: React.DragEvent) {
+    e.preventDefault();
+    setIsDragging(false);
+    if (uploading) return;
+    if (e.dataTransfer.files.length > 0) addFiles(e.dataTransfer.files);
   }
 
   function removeFile(index: number) {
@@ -246,7 +272,14 @@ function PortalPage() {
           {/* Upload Area */}
           <div
             onClick={() => fileInputRef.current?.click()}
-            className="border-2 border-dashed border-[rgba(212,175,55,0.2)] rounded-2xl p-8 text-center cursor-pointer hover:border-[rgba(212,175,55,0.4)] transition-colors"
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+            className={`border-2 border-dashed rounded-2xl p-8 text-center cursor-pointer transition-colors ${
+              isDragging
+                ? "border-[#D4AF37] bg-[rgba(212,175,55,0.08)]"
+                : "border-[rgba(212,175,55,0.2)] hover:border-[rgba(212,175,55,0.4)]"
+            }`}
           >
             <div className="w-14 h-14 rounded-full bg-[rgba(212,175,55,0.08)] flex items-center justify-center mx-auto mb-4">
               <svg className="w-7 h-7 text-[#D4AF37]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -254,8 +287,12 @@ function PortalPage() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
               </svg>
             </div>
-            <p className="text-[#F1F5F9] font-medium mb-1">レシートを撮影・選択</p>
-            <p className="text-[#64748B] text-xs">タップして写真を選択、または撮影</p>
+            <p className="text-[#F1F5F9] font-medium mb-1">
+              {isDragging ? "ここにドロップして読み込み" : "レシートを撮影・選択"}
+            </p>
+            <p className="text-[#64748B] text-xs">
+              タップして写真を選択、または撮影。PCからはドラッグ&ドロップでも読み込めます
+            </p>
             <p className="text-[#64748B] text-xs mt-1">最大5枚まで同時に送れます</p>
             <input
               ref={fileInputRef}
