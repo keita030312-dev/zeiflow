@@ -212,6 +212,11 @@ export default function ReceiptsPage() {
       const res = await fetch(`/api/receipts?${params}`);
       if (res.ok) {
         const data = await res.json();
+        // 削除等で現在ページが総ページ数を超えたら最終ページへ戻す(空表示防止)
+        if (data.items.length === 0 && data.total > 0 && receiptPage > data.totalPages) {
+          setReceiptPage(Math.max(1, data.totalPages));
+          return;
+        }
         setReceipts(data.items);
         setReceiptTotal(data.total);
         setReceiptTotalPages(data.totalPages);
