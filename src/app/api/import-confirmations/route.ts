@@ -40,7 +40,13 @@ export async function POST(req: NextRequest) {
   const auth = await requireAuth(req);
   if (auth instanceof NextResponse) return auth;
 
-  const parsed = confirmSchema.safeParse(await req.json());
+  let body: unknown;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "リクエスト形式が正しくありません" }, { status: 400 });
+  }
+  const parsed = confirmSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json({ error: "出力履歴を指定してください" }, { status: 400 });
   }
@@ -123,32 +129,44 @@ export async function POST(req: NextRequest) {
   const deleteAfter = new Date(importedAt);
   deleteAfter.setUTCDate(deleteAfter.getUTCDate() + RETENTION_DAYS_AFTER_IMPORT);
 
-  await prisma.$transaction(async (tx) => {
-    const updated = await tx.exportLog.updateMany({
-      where: {
-        id: exportLog.id,
-        ...scope,
-        importConfirmedAt: null,
-      },
-      data: { importConfirmedAt: importedAt, deleteAfter },
-    });
-    if (updated.count !== 1) throw new Error("既に取込完了確認されています");
-
-    if (receiptIds.length > 0) {
-      await tx.receipt.updateMany({
-        where: { id: { in: receiptIds }, ...scope },
-        data: { importedAt, deleteAfter },
+  const ALREADY_CONFIRMED = "既に取込完了確認されています";
+  try {
+    await prisma.$transaction(async (tx) => {
+      const updated = await tx.exportLog.updateMany({
+        where: {
+          id: exportLog.id,
+          ...scope,
+          importConfirmedAt: null,
+        },
+        data: { importConfirmedAt: importedAt, deleteAfter },
       });
-    }
-    await tx.auditLog.create({
-      data: {
-        action: "ACCOUNTING_IMPORT_CONFIRMED",
-        detail: `会計ソフト取込完了: 出力${exportLog.id}、画像${receiptIds.length}件、削除予定${deleteAfter.toISOString()}`,
-        userId: auth.id,
-        ...(auth.orgId ? { organizationId: auth.orgId } : {}),
-      },
+      if (updated.count !== 1) throw new Error(ALREADY_CONFIRMED);
+
+      if (receiptIds.length > 0) {
+        await tx.receipt.updateMany({
+          where: { id: { in: receiptIds }, ...scope },
+          data: { importedAt, deleteAfter },
+        });
+      }
+      await tx.auditLog.create({
+        data: {
+          action: "ACCOUNTING_IMPORT_CONFIRMED",
+          detail: `会計ソフト取込完了: 出力${exportLog.id}、画像${receiptIds.length}件、削除予定${deleteAfter.toISOString()}`,
+          userId: auth.id,
+          ...(auth.orgId ? { organizationId: auth.orgId } : {}),
+        },
+      });
     });
-  });
+  } catch (e) {
+    if (e instanceof Error && e.message === ALREADY_CONFIRMED) {
+      return NextResponse.json({ error: ALREADY_CONFIRMED }, { status: 409 });
+    }
+    console.error("import-confirmation failed:", e);
+    return NextResponse.json(
+      { error: "取込完了の記録に失敗しました。もう一度お試しください" },
+      { status: 500 },
+    );
+  }
 
   return NextResponse.json({
     success: true,
