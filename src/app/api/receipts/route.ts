@@ -26,6 +26,11 @@ export async function GET(req: NextRequest) {
   const scope = getScope(auth);
   const clientId = req.nextUrl.searchParams.get("clientId");
   const month = req.nextUrl.searchParams.get("month"); // YYYY-MM形式
+  const page = Math.max(1, Number(req.nextUrl.searchParams.get("page")) || 1);
+  const limit = Math.min(
+    100,
+    Math.max(1, Number(req.nextUrl.searchParams.get("limit")) || 50),
+  );
 
   const dateFilter: Record<string, unknown> = {};
   if (month) {
@@ -49,43 +54,69 @@ export async function GET(req: NextRequest) {
   } as const;
 
   try {
-    const receipts = await prisma.receipt.findMany({
-      where: {
+    const where = {
+      ...scope,
+      ...(clientId ? { clientId } : {}),
+      ...dateFilter,
+    };
+    const [receipts, total] = await prisma.$transaction([
+      prisma.receipt.findMany({
+        where,
+        orderBy: [{ uploadedAt: "desc" }, { id: "desc" }],
+        skip: (page - 1) * limit,
+        take: limit,
+        select: receiptSelect,
+      }),
+      prisma.receipt.count({ where }),
+    ]);
+
+    // Blob URLはクライアントへ露出させない(表示は認証付き /api/uploads 経由)
+    return NextResponse.json({
+      items: receipts.map((r) => ({
+        ...r,
+        imagePath: sanitizeImagePath(r.imagePath),
+      })),
+      page,
+      limit,
+      total,
+      totalPages: Math.max(1, Math.ceil(total / limit)),
+    });
+  } catch (e) {
+    if (isLikelyMissingSchemaColumn(e, "document_kind")) {
+      const where = {
         ...scope,
         ...(clientId ? { clientId } : {}),
         ...dateFilter,
-      },
-      orderBy: { uploadedAt: "desc" },
-      select: receiptSelect,
-    });
-
-    // Blob URLはクライアントへ露出させない(表示は認証付き /api/uploads 経由)
-    return NextResponse.json(
-      receipts.map((r) => ({ ...r, imagePath: sanitizeImagePath(r.imagePath) }))
-    );
-  } catch (e) {
-    if (isLikelyMissingSchemaColumn(e, "document_kind")) {
-      const receipts = await prisma.receipt.findMany({
-        where: {
-          ...scope,
-          ...(clientId ? { clientId } : {}),
-          ...dateFilter,
-        },
-        orderBy: { uploadedAt: "desc" },
-        select: {
-          id: true,
-          imagePath: true,
-          imageMime: true,
-          ocrRaw: true,
-          status: true,
-          uploadedAt: true,
-          client: { select: { name: true, code: true } },
-          journalEntries: true,
-        },
+      };
+      const [receipts, total] = await prisma.$transaction([
+        prisma.receipt.findMany({
+          where,
+          orderBy: [{ uploadedAt: "desc" }, { id: "desc" }],
+          skip: (page - 1) * limit,
+          take: limit,
+          select: {
+            id: true,
+            imagePath: true,
+            imageMime: true,
+            ocrRaw: true,
+            status: true,
+            uploadedAt: true,
+            client: { select: { name: true, code: true } },
+            journalEntries: true,
+          },
+        }),
+        prisma.receipt.count({ where }),
+      ]);
+      return NextResponse.json({
+        items: receipts.map((r) => ({
+          ...r,
+          imagePath: sanitizeImagePath(r.imagePath),
+        })),
+        page,
+        limit,
+        total,
+        totalPages: Math.max(1, Math.ceil(total / limit)),
       });
-      return NextResponse.json(
-        receipts.map((r) => ({ ...r, imagePath: sanitizeImagePath(r.imagePath) }))
-      );
     }
     throw e;
   }

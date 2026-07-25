@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requirePortalToken } from "@/lib/portal-auth";
-import { deleteReceiptImageBlob } from "@/lib/receipt-image";
 
 export async function POST(req: NextRequest) {
   const portal = await requirePortalToken(req);
@@ -17,12 +16,6 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 確定対象の仕訳を取得（レシートID付き）
-    const journals = await prisma.journalEntry.findMany({
-      where: { id: { in: ids }, clientId: portal.clientId },
-      select: { id: true, receiptId: true },
-    });
-
     // このクライアントの仕訳のみ確定できる
     const result = await prisma.journalEntry.updateMany({
       where: {
@@ -33,33 +26,6 @@ export async function POST(req: NextRequest) {
         isConfirmed: true,
       },
     });
-
-    // 確定した仕訳に紐づくレシートを削除（履歴から消去＆容量節約）
-    // レシートに紐づく全仕訳が確定済みになった場合のみ削除
-    const receiptIds = Array.from(new Set(journals.map((j) => j.receiptId).filter(Boolean))) as string[];
-    if (receiptIds.length > 0) {
-      for (const receiptId of receiptIds) {
-        const remaining = await prisma.journalEntry.count({
-          where: { receiptId, isConfirmed: false },
-        });
-        if (remaining === 0) {
-          await prisma.journalEntry.updateMany({
-            where: { receiptId },
-            data: { receiptId: null },
-          });
-          const target = await prisma.receipt.findUnique({
-            where: { id: receiptId },
-            select: { imagePath: true },
-          });
-          // 行削除が成立した場合のみBlobを消す(失敗時に画像だけ喪失させない)
-          const deleted = await prisma.receipt
-            .delete({ where: { id: receiptId } })
-            .then(() => true)
-            .catch(() => false);
-          if (deleted) await deleteReceiptImageBlob(target?.imagePath);
-        }
-      }
-    }
 
     // 監査ログ
     await prisma.auditLog.create({

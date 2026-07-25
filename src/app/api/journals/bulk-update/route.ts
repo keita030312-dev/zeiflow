@@ -3,7 +3,6 @@ import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { getScope, requireAuth } from "@/lib/auth-middleware";
 import { deriveTaxRateFromCategories } from "@/lib/tax-categories";
-import { deleteReceiptImageBlob } from "@/lib/receipt-image";
 
 const entrySchema = z.object({
   id: z.string().min(1),
@@ -78,7 +77,6 @@ export async function PUT(req: NextRequest) {
   );
 
   try {
-    const deletedImagePaths: string[] = [];
     await prisma.$transaction(async (tx) => {
       for (const entry of parsed.data.entries) {
         const existing = ownedEntryMap.get(entry.id);
@@ -141,37 +139,6 @@ export async function PUT(req: NextRequest) {
         });
       }
 
-      if (parsed.data.confirm) {
-        const receiptIds = Array.from(
-          new Set(
-            ownedEntries
-              .map((entry) => entry.receiptId)
-              .filter((receiptId): receiptId is string => Boolean(receiptId)),
-          ),
-        );
-
-        for (const receiptId of receiptIds) {
-          const remaining = await tx.journalEntry.count({
-            where: { receiptId, isConfirmed: false, ...scope },
-          });
-          if (remaining === 0) {
-            await tx.journalEntry.updateMany({
-              where: { receiptId, ...scope },
-              data: { receiptId: null },
-            });
-            const target = await tx.receipt.findFirst({
-              where: { id: receiptId, ...scope },
-              select: { imagePath: true },
-            });
-            await tx.receipt.deleteMany({
-              where: { id: receiptId, ...scope },
-            });
-            // Blob削除はトランザクション外で行うため収集のみ
-            if (target?.imagePath) deletedImagePaths.push(target.imagePath);
-          }
-        }
-      }
-
       await tx.auditLog.create({
         data: {
           action: parsed.data.confirm
@@ -185,10 +152,6 @@ export async function PUT(req: NextRequest) {
         },
       });
     });
-    // トランザクション成立後にBlobを掃除(失敗しても仕訳確定は成立)
-    for (const path of deletedImagePaths) {
-      await deleteReceiptImageBlob(path);
-    }
   } catch (error) {
     return NextResponse.json(
       {

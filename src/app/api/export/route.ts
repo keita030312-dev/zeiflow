@@ -7,6 +7,9 @@ import { generateMoneyForwardCsv } from "@/lib/csv/moneyforward";
 import { generateFreeeCsv } from "@/lib/csv/freee";
 import type { JournalEntryData, ClientTaxInfo, CsvFormat, PeriodType } from "@/types";
 
+const SNAPSHOT_QUERY_CHUNK = 5_000;
+const SNAPSHOT_WRITE_CHUNK = 1_000;
+
 export async function POST(req: NextRequest) {
   try {
     const auth = await requireAuth(req);
@@ -74,25 +77,66 @@ export async function POST(req: NextRequest) {
       orderBy: { date: "asc" },
     });
 
-    // 出力済み除外: 同一顧客・同一形式の過去出力期間に含まれる仕訳を除く
+    // 出力済み除外: 過去CSVへ実際に含めた仕訳IDだけを除く。
+    // 期間推定だと、編集・再出力・部分出力で誤って除外されるため使わない。
     if (excludeExported && allEntries.length > 0) {
       const formatKey = format.toUpperCase() as "YAYOI" | "MONEYFORWARD" | "FREEE";
-      const prevLogs = await prisma.exportLog.findMany({
-        where: { clientId, format: formatKey, ...scope },
-        select: {
-          periodStart: true,
-          periodEnd: true,
-          exportedAt: true,
+      const snapshots: {
+        journalEntryId: string;
+        journalUpdatedAt: Date;
+      }[] = [];
+      const entryIds = allEntries.map((entry) => entry.id);
+      for (let offset = 0; offset < entryIds.length; offset += SNAPSHOT_QUERY_CHUNK) {
+        snapshots.push(
+          ...(await prisma.exportedJournal.findMany({
+            where: {
+              exportLog: { clientId, format: formatKey, ...scope },
+              journalEntryId: {
+                in: entryIds.slice(offset, offset + SNAPSHOT_QUERY_CHUNK),
+              },
+            },
+            select: { journalEntryId: true, journalUpdatedAt: true },
+          })),
+        );
+      }
+      if (snapshots.length > 0) {
+        const lastExportedVersions = new Map<string, Date>();
+        for (const snapshot of snapshots) {
+          const previous = lastExportedVersions.get(snapshot.journalEntryId);
+          if (!previous || snapshot.journalUpdatedAt > previous) {
+            lastExportedVersions.set(
+              snapshot.journalEntryId,
+              snapshot.journalUpdatedAt,
+            );
+          }
+        }
+        allEntries = allEntries.filter((entry) => {
+          const exportedVersion = lastExportedVersions.get(entry.id);
+          return !exportedVersion || entry.updatedAt > exportedVersion;
+        });
+      }
+
+      // フォールバック: スナップショット導入前の旧 export_logs(exported_journals を持たないログ)は、
+      // 旧ロジックと同じ「期間内 かつ 出力時点から未編集(updatedAt <= exportedAt)」で除外する。
+      // スナップショットを持つ新ログには適用しない(誤除外を避けるため)。
+      const legacyLogs = await prisma.exportLog.findMany({
+        where: {
+          clientId,
+          format: formatKey,
+          ...scope,
+          exportedJournals: { none: {} },
         },
+        select: { periodStart: true, periodEnd: true, exportedAt: true },
       });
-      if (prevLogs.length > 0) {
-        allEntries = allEntries.filter((e) =>
-          !prevLogs.some(
-            (log) =>
-              e.date >= log.periodStart &&
-              e.date <= log.periodEnd &&
-              e.updatedAt <= log.exportedAt,
-          )
+      if (legacyLogs.length > 0 && allEntries.length > 0) {
+        allEntries = allEntries.filter(
+          (entry) =>
+            !legacyLogs.some(
+              (log) =>
+                entry.date >= log.periodStart &&
+                entry.date <= log.periodEnd &&
+                entry.updatedAt <= log.exportedAt,
+            ),
         );
       }
     }
@@ -150,34 +194,61 @@ export async function POST(req: NextRequest) {
         );
     }
 
-    // Log the export
+    // CSVに含めた仕訳IDを出力履歴と同一トランザクションで保存する。
+    // 保存失敗時もCSV自体は返す(ExportLogとスナップショットは同一トランザクションで
+    // 両方ロールバックされるため、excludeExported の整合性は壊れない。単に「未出力扱い」に戻るだけ)。
+    let snapshotSaved = true;
     try {
-      await prisma.exportLog.create({
-        data: {
-          format: format.toUpperCase() as "YAYOI" | "MONEYFORWARD" | "FREEE",
-          periodType:
-            periodType === "monthly"
-              ? "MONTHLY"
-              : periodType === "semi_annual"
-                ? "SEMI_ANNUAL"
-                : "ANNUAL",
-          periodStart: start,
-          periodEnd: endOfDay,
-          recordCount: entries.length,
-          clientId,
-          userId: auth.id,
-          ...(auth.orgId ? { organizationId: auth.orgId } : {}),
-        },
-      });
-    } catch {
-      // エクスポートログの保存失敗はCSV出力を止めない
+      await prisma.$transaction(async (tx) => {
+        const exportLog = await tx.exportLog.create({
+          data: {
+            format: format.toUpperCase() as "YAYOI" | "MONEYFORWARD" | "FREEE",
+            periodType:
+              periodType === "monthly"
+                ? "MONTHLY"
+                : periodType === "semi_annual"
+                  ? "SEMI_ANNUAL"
+                  : "ANNUAL",
+            periodStart: start,
+            periodEnd: endOfDay,
+            recordCount: entries.length,
+            clientId,
+            userId: auth.id,
+            ...(auth.orgId ? { organizationId: auth.orgId } : {}),
+          },
+        });
+        for (let offset = 0; offset < entries.length; offset += SNAPSHOT_WRITE_CHUNK) {
+          await tx.exportedJournal.createMany({
+            data: entries
+              .slice(offset, offset + SNAPSHOT_WRITE_CHUNK)
+              .map((entry) => ({
+                exportLogId: exportLog.id,
+                journalEntryId: entry.id,
+                receiptId: entry.receiptId,
+                journalUpdatedAt: entry.updatedAt,
+              })),
+          });
+        }
+      },
+      // デフォルト5秒だと1万件超の正当な出力がタイムアウトで500になるため明示する。
+      { timeout: 30_000, maxWait: 5_000 },
+      );
+    } catch (snapshotError) {
+      snapshotSaved = false;
+      console.error(
+        "Export snapshot save failed (CSV is still returned):",
+        snapshotError,
+      );
     }
 
     const commonHeaders = {
       "Content-Disposition": `attachment; filename="${filename}"`,
       "X-Format": format,
       "X-Record-Count": entries.length.toString(),
-      "Access-Control-Expose-Headers": "Content-Disposition, X-Format, X-Record-Count",
+      // スナップショット保存に失敗した場合の警告(出力履歴に残らないため、次回excludeExportedで再出力され得る)
+      ...(snapshotSaved ? {} : { "X-Snapshot-Warning": "snapshot-save-failed" }),
+      "Access-Control-Expose-Headers":
+        "Content-Disposition, X-Format, X-Record-Count, X-Snapshot-Warning",
     };
     // \u5F25\u751F\u4F1A\u8A08\u306FShift-JIS\u5FC5\u9808\u3002MoneyForward/freee\u306FUTF-8 with BOM\u3002
     if (format === "yayoi") {

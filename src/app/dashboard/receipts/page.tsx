@@ -157,6 +157,9 @@ export default function ReceiptsPage() {
   // Receipt history state
   const [receipts, setReceipts] = useState<ReceiptRecord[]>([]);
   const [loadingReceipts, setLoadingReceipts] = useState(true);
+  const [receiptPage, setReceiptPage] = useState(1);
+  const [receiptTotal, setReceiptTotal] = useState(0);
+  const [receiptTotalPages, setReceiptTotalPages] = useState(1);
 
   // Bulk select state
   const [selectedReceipts, setSelectedReceipts] = useState<Set<string>>(new Set());
@@ -204,15 +207,30 @@ export default function ReceiptsPage() {
       const params = new URLSearchParams();
       if (filterClient) params.set("clientId", filterClient);
       if (filterMonth) params.set("month", filterMonth);
+      params.set("page", String(receiptPage));
+      params.set("limit", "50");
       const res = await fetch(`/api/receipts?${params}`);
       if (res.ok) {
-        setReceipts(await res.json());
+        const data = await res.json();
+        // 削除等で現在ページが総ページ数を超えたら最終ページへ戻す(空表示防止)
+        if (data.items.length === 0 && data.total > 0 && receiptPage > data.totalPages) {
+          setReceiptPage(Math.max(1, data.totalPages));
+          return;
+        }
+        setReceipts(data.items);
+        setReceiptTotal(data.total);
+        setReceiptTotalPages(data.totalPages);
+        setSelectedReceipts(new Set());
       }
     } catch {
       toast.error("レシート履歴の取得に失敗しました");
     } finally {
       setLoadingReceipts(false);
     }
+  }, [filterClient, filterMonth, receiptPage]);
+
+  useEffect(() => {
+    setReceiptPage(1);
   }, [filterClient, filterMonth]);
 
   useEffect(() => {
@@ -1686,6 +1704,33 @@ export default function ReceiptsPage() {
                     )}
                   </div>
                 ))}
+              </div>
+            )}
+            {!loadingReceipts && receiptTotal > 0 && (
+              <div className="mt-5 flex flex-col sm:flex-row items-center justify-between gap-3 border-t border-[rgba(212,175,55,0.08)] pt-4">
+                <p className="text-xs text-[#64748B]">
+                  全{receiptTotal.toLocaleString()}件・{receiptPage}/{receiptTotalPages}ページ
+                </p>
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    disabled={receiptPage <= 1}
+                    onClick={() => setReceiptPage((page) => Math.max(1, page - 1))}
+                    className="bg-[#334155] text-[#F1F5F9] hover:bg-[#475569] disabled:opacity-40"
+                  >
+                    前へ
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    disabled={receiptPage >= receiptTotalPages}
+                    onClick={() => setReceiptPage((page) => Math.min(receiptTotalPages, page + 1))}
+                    className="bg-[#334155] text-[#F1F5F9] hover:bg-[#475569] disabled:opacity-40"
+                  >
+                    次へ
+                  </Button>
+                </div>
               </div>
             )}
           </CardContent>
