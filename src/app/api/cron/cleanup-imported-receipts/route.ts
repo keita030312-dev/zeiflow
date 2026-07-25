@@ -18,26 +18,37 @@ export async function GET(req: NextRequest) {
   });
 
   let deleted = 0;
+  let failed = 0;
   for (const receipt of due) {
-    const removed = await prisma.$transaction(async (tx) => {
-      await tx.journalEntry.updateMany({
-        where: { receiptId: receipt.id },
-        data: { receiptId: null },
+    // 1件の失敗でバッチ全体が落ちないよう、各受領の削除を個別に隔離する。
+    try {
+      const removed = await prisma.$transaction(async (tx) => {
+        await tx.journalEntry.updateMany({
+          where: { receiptId: receipt.id },
+          data: { receiptId: null },
+        });
+        const result = await tx.receipt.deleteMany({
+          where: { id: receipt.id, deleteAfter: { lte: new Date() } },
+        });
+        return result.count === 1;
       });
-      const result = await tx.receipt.deleteMany({
-        where: { id: receipt.id, deleteAfter: { lte: new Date() } },
-      });
-      return result.count === 1;
-    });
-    if (removed) {
-      await deleteReceiptImageBlob(receipt.imagePath);
-      deleted += 1;
+      if (removed) {
+        await deleteReceiptImageBlob(receipt.imagePath);
+        deleted += 1;
+      }
+    } catch (error) {
+      failed += 1;
+      console.error(
+        `cleanup-imported-receipts: failed to delete receipt ${receipt.id}:`,
+        error,
+      );
     }
   }
 
   return NextResponse.json({
     success: true,
     deleted,
+    failed,
     remainingMayExist: due.length === BATCH_SIZE,
   });
 }

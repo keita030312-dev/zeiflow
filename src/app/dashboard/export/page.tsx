@@ -172,6 +172,11 @@ export default function ExportPage() {
       toast.success(
         `${formatLabel}形式で${recordCount}件の仕訳をエクスポートしました`
       );
+      if (res.headers.get("X-Snapshot-Warning")) {
+        toast.warning(
+          "出力履歴の保存に失敗しました。この出力は取込状況に表示されず、次回の「出力済みを除外」でも除外されません",
+        );
+      }
       await loadExportHistory();
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
