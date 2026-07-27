@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireAuth, getScope } from "@/lib/auth-middleware";
 import { reportError } from "@/lib/error-reporter";
-import { parseCsvLine, decodeCsvBuffer, detectJournalHeader } from "@/lib/csv/journal-csv";
+import { parseCsvLine, decodeCsvBuffer, findJournalHeader, parseFlexibleDate } from "@/lib/csv/journal-csv";
 
 export async function POST(req: NextRequest) {
   const auth = await requireAuth(req);
@@ -31,23 +31,25 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "CSVにデータがありません" }, { status: 400 });
     }
 
-    // ヘッダー行を解析(quote-aware パーサーで quoted comma にも対応)
-    const headerIdx = detectJournalHeader(parseCsvLine(lines[0]));
-    if (!headerIdx) {
+    // ヘッダー行を解析(quote-aware パーサー・弥生等の前置き行にも対応して先頭20行から探索)
+    const found = findJournalHeader(lines);
+    if (!found) {
       return NextResponse.json({
         error: "CSVのヘッダーに必須項目がありません。「日付,借方科目,貸方科目,金額」を含めてください",
       }, { status: 400 });
     }
-    const { dateIdx, debitIdx, creditIdx, amountIdx, descIdx, taxIdx, invoiceIdx, memoIdx } = headerIdx;
+    const { dateIdx, debitIdx, creditIdx, amountIdx, descIdx, taxIdx, invoiceIdx, memoIdx } = found.header;
+    const headerLineIdx = found.headerLineIdx;
 
     const entries = [];
     const errors = [];
 
-    for (let i = 1; i < lines.length; i++) {
+    for (let i = headerLineIdx + 1; i < lines.length; i++) {
       const cols = parseCsvLine(lines[i]);
       try {
-        const date = new Date(cols[dateIdx]);
-        if (isNaN(date.getTime())) throw new Error("無効な日付");
+        // 和暦(令和8年/R8.7.21)・「2026年7月21日」形式も許容
+        const date = parseFlexibleDate(cols[dateIdx]);
+        if (!date) throw new Error("無効な日付");
 
         const amount = parseInt(cols[amountIdx].replace(/[,¥\\]/g, ""), 10);
         if (isNaN(amount) || amount <= 0) throw new Error("無効な金額");

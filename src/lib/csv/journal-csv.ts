@@ -66,6 +66,23 @@ export interface JournalCsvHeader {
   memoIdx: number;
 }
 
+/**
+ * ヘッダー行を先頭maxScan行から探索する。
+ * 弥生等の帳票エクスポートは冒頭に「事業所名」「出力日時」などの前置き行があり、
+ * 1行目固定の判定ではヘッダーに到達できない。
+ */
+export function findJournalHeader(
+  lines: string[],
+  maxScan = 20,
+): { header: JournalCsvHeader; headerLineIdx: number } | null {
+  const limit = Math.min(lines.length, maxScan);
+  for (let i = 0; i < limit; i++) {
+    const header = detectJournalHeader(parseCsvLine(lines[i]));
+    if (header) return { header, headerLineIdx: i };
+  }
+  return null;
+}
+
 export function detectJournalHeader(header: string[]): JournalCsvHeader | null {
   const dateIdx = header.findIndex((h) => /日付|date/i.test(h));
   const debitIdx = header.findIndex((h) => /借方|debit/i.test(h));
@@ -93,11 +110,12 @@ export function detectJournalHeader(header: string[]): JournalCsvHeader | null {
 export function parseJournalCsv(text: string): PastJournalRow[] | null {
   const lines = text.split("\n").map((l) => l.trim()).filter((l) => l.length > 0);
   if (lines.length < 2) return null;
-  const header = detectJournalHeader(parseCsvLine(lines[0]));
-  if (!header) return null;
+  const found = findJournalHeader(lines);
+  if (!found) return null;
+  const { header, headerLineIdx } = found;
 
   const rows: PastJournalRow[] = [];
-  for (let i = 1; i < lines.length; i++) {
+  for (let i = headerLineIdx + 1; i < lines.length; i++) {
     const cols = parseCsvLine(lines[i]);
     const debitAccount = cols[header.debitIdx];
     const creditAccount = cols[header.creditIdx];
@@ -111,8 +129,40 @@ export function parseJournalCsv(text: string): PastJournalRow[] | null {
       taxRate: null,
     });
   }
-  // 有効行が半分未満なら仕訳CSVとみなさない
+  // 有効行がヘッダー以降の半分未満なら仕訳CSVとみなさない
   // (仕訳例を数行含むだけのルール文章を誤って集計に置換し、本文を捨てるのを防ぐ)
-  if (rows.length === 0 || rows.length < (lines.length - 1) * 0.5) return null;
+  const dataLineCount = lines.length - headerLineIdx - 1;
+  if (rows.length === 0 || rows.length < dataLineCount * 0.5) return null;
   return rows;
+}
+
+/**
+ * 取込CSVの日付を寛容にパースする。会計ソフトのエクスポートは
+ * 「2026/07/21」「2026年7月21日」のほか和暦「令和8年7月21日」「R8.7.21」「R.08/07/21」がある。
+ * 解釈できなければ null(呼び出し側でエラー行として扱う)。
+ */
+export function parseFlexibleDate(raw: string): Date | null {
+  const s = (raw || "").normalize("NFKC").trim();
+  if (!s) return null;
+
+  // 和暦 → 西暦(令和R=2018起点, 平成H=1988起点, 昭和S=1925起点)
+  const eraMatch = s.match(/^(令和|平成|昭和|[RHS])\.?\s*(\d{1,2})[年./](\d{1,2})[月./](\d{1,2})日?$/i);
+  if (eraMatch) {
+    const eraBase: Record<string, number> = { 令和: 2018, R: 2018, 平成: 1988, H: 1988, 昭和: 1925, S: 1925 };
+    const base = eraBase[eraMatch[1].toUpperCase()];
+    if (base) {
+      const d = new Date(base + parseInt(eraMatch[2], 10), parseInt(eraMatch[3], 10) - 1, parseInt(eraMatch[4], 10));
+      return isNaN(d.getTime()) ? null : d;
+    }
+  }
+
+  // 「2026年7月21日」→「2026/7/21」
+  const jp = s.match(/^(\d{4})年(\d{1,2})月(\d{1,2})日$/);
+  if (jp) {
+    const d = new Date(parseInt(jp[1], 10), parseInt(jp[2], 10) - 1, parseInt(jp[3], 10));
+    return isNaN(d.getTime()) ? null : d;
+  }
+
+  const d = new Date(s);
+  return isNaN(d.getTime()) ? null : d;
 }

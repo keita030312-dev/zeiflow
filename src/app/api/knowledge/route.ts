@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireAuth, getScope } from "@/lib/auth-middleware";
 import { reportError } from "@/lib/error-reporter";
-import { decodeCsvBuffer } from "@/lib/csv/journal-csv";
+import { decodeCsvBuffer, parseJournalCsv } from "@/lib/csv/journal-csv";
+import { buildLearningText } from "@/lib/ai/learning-context";
 
 // GET: ナレッジ一覧
 export async function GET(req: NextRequest) {
@@ -144,6 +145,16 @@ export async function POST(req: NextRequest) {
     } else if (mimeType === "text/csv" || mimeType === "text/plain" || mimeType === "text/tab-separated-values") {
       // 会計ソフトのCSVはShift-JISが多いため、UTF-8で化けたらShift-JISで再デコード
       extractedText = decodeCsvBuffer(buffer);
+
+      // 仕訳CSV(1年分の仕訳データ等)は登録時に「摘要→科目」の集計へ圧縮して保存する。
+      // 生テキストのままだと後述の文字数上限で大半が欠落するが、集計なら
+      // 4MBのフルサイズCSVでも欠落ゼロでプロンプトに収まる形になる
+      if (mimeType !== "text/plain") {
+        const journalRows = parseJournalCsv(extractedText);
+        if (journalRows && journalRows.length >= 5) {
+          extractedText = `[仕訳データ ${journalRows.length}件を集計]\n${buildLearningText(journalRows)}`;
+        }
+      }
     } else {
       return NextResponse.json(
         { error: "PDF、CSV、テキストファイルのみ対応しています" },
