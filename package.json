@@ -8,7 +8,7 @@
     "db:push": "prisma db push",
     "start": "next start --hostname 0.0.0.0",
     "lint": "eslint",
-    "test": "node --experimental-strip-types scripts/test-journal-csv.mjs && node --experimental-strip-types scripts/test-rate-limit.mjs"
+    "test": "node --experimental-strip-types scripts/test-journal-csv.mjs && node --experimental-strip-types scripts/test-rate-limit.mjs && node --experimental-strip-types scripts/test-database-url.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.80.0",
