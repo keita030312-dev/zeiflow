@@ -2,38 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireAuth, getScope } from "@/lib/auth-middleware";
 import { reportError } from "@/lib/error-reporter";
-
-// quote-aware CSV 1行パーサー。`"1,234"` や `"Lunch, client"` のような quoted comma を正しく扱う。
-// 過去に `split(",")` を使っていて、quoted comma で列ズレ → 行が拒否される/誤った列に取り込まれる事故があった。
-function parseCsvLine(line: string): string[] {
-  const result: string[] = [];
-  let current = "";
-  let inQuote = false;
-  for (let i = 0; i < line.length; i++) {
-    const ch = line[i];
-    if (inQuote) {
-      if (ch === '"') {
-        if (line[i + 1] === '"') {
-          current += '"';
-          i++;
-        } else {
-          inQuote = false;
-        }
-      } else {
-        current += ch;
-      }
-    } else if (ch === ',') {
-      result.push(current.trim());
-      current = "";
-    } else if (ch === '"') {
-      inQuote = true;
-    } else {
-      current += ch;
-    }
-  }
-  result.push(current.trim());
-  return result;
-}
+import { parseCsvLine, decodeCsvBuffer, detectJournalHeader } from "@/lib/csv/journal-csv";
 
 export async function POST(req: NextRequest) {
   const auth = await requireAuth(req);
@@ -54,7 +23,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "顧客が見つかりません" }, { status: 404 });
     }
 
-    const text = await file.text();
+    // 会計ソフトのCSVはShift-JISが多いため、UTF-8で化けたらShift-JISで再デコード
+    const text = decodeCsvBuffer(Buffer.from(await file.arrayBuffer()));
     const lines = text.split("\n").map((l) => l.trim()).filter((l) => l.length > 0);
 
     if (lines.length < 2) {
@@ -62,21 +32,13 @@ export async function POST(req: NextRequest) {
     }
 
     // ヘッダー行を解析(quote-aware パーサーで quoted comma にも対応)
-    const header = parseCsvLine(lines[0]);
-    const dateIdx = header.findIndex((h) => /日付|date/i.test(h));
-    const debitIdx = header.findIndex((h) => /借方|debit/i.test(h));
-    const creditIdx = header.findIndex((h) => /貸方|credit/i.test(h));
-    const amountIdx = header.findIndex((h) => /金額|amount/i.test(h));
-    const descIdx = header.findIndex((h) => /摘要|description|内容/i.test(h));
-    const taxIdx = header.findIndex((h) => /税額|tax/i.test(h));
-    const invoiceIdx = header.findIndex((h) => /登録番号|invoice|インボイス/i.test(h));
-    const memoIdx = header.findIndex((h) => /メモ|備考|memo/i.test(h));
-
-    if (dateIdx === -1 || debitIdx === -1 || creditIdx === -1 || amountIdx === -1) {
+    const headerIdx = detectJournalHeader(parseCsvLine(lines[0]));
+    if (!headerIdx) {
       return NextResponse.json({
         error: "CSVのヘッダーに必須項目がありません。「日付,借方科目,貸方科目,金額」を含めてください",
       }, { status: 400 });
     }
+    const { dateIdx, debitIdx, creditIdx, amountIdx, descIdx, taxIdx, invoiceIdx, memoIdx } = headerIdx;
 
     const entries = [];
     const errors = [];

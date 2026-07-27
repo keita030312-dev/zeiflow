@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireAuth, getScope } from "@/lib/auth-middleware";
 import { reportError } from "@/lib/error-reporter";
+import { decodeCsvBuffer } from "@/lib/csv/journal-csv";
 
 // GET: ナレッジ一覧
 export async function GET(req: NextRequest) {
@@ -141,7 +142,8 @@ export async function POST(req: NextRequest) {
         extractedText = `[PDFファイル: ${file.name}] - テキスト抽出に失敗しました。CSVまたはテキストファイルでの登録をお試しください。`;
       }
     } else if (mimeType === "text/csv" || mimeType === "text/plain" || mimeType === "text/tab-separated-values") {
-      extractedText = buffer.toString("utf-8");
+      // 会計ソフトのCSVはShift-JISが多いため、UTF-8で化けたらShift-JISで再デコード
+      extractedText = decodeCsvBuffer(buffer);
     } else {
       return NextResponse.json(
         { error: "PDF、CSV、テキストファイルのみ対応しています" },
@@ -156,8 +158,9 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 最大文字数制限（プロンプトに収まるように）
-    const maxChars = 30000;
+    // 最大文字数制限。仕訳CSVはOCR読込時に「摘要→科目」へ集計圧縮されるため、
+    // 保存段階は広めに残す(以前の30,000字では1年分の仕訳が保存時点で欠落していた)
+    const maxChars = 100000;
     if (extractedText.length > maxChars) {
       extractedText = extractedText.substring(0, maxChars);
     }
