@@ -19,6 +19,7 @@ const MODEL_FAST = "claude-sonnet-4-6";          // fast時のメイン / accura
 const MODEL_ACCURATE = "claude-opus-4-7";        // accurate/ultra時のメイン
 const MODEL_INVOICE_FALLBACK = "claude-haiku-4-5-20251001"; // 登録番号OCRのフォールバック
 const KNOWLEDGE_TEXT_MAX_CHARS = 15000;          // ナレッジのプロンプト上限
+const KNOWLEDGE_FILE_PAGE_SIZE = 20;             // 全文を全件取得せず、必要分だけ段階取得
 const OCR_MAX_ATTEMPTS = 3;                      // 一時的エラーの最大試行回数
 const RETRY_BASE_DELAY_MS = 800;                 // リトライ待機の基数（×attempt）
 
@@ -28,6 +29,58 @@ function getAnthropicClient(apiKey?: string | null) {
     throw new Error("APIキーが設定されていません。設定ページでAnthropicのAPIキーを登録してください。");
   }
   return new Anthropic({ apiKey: key });
+}
+
+async function loadKnowledgeText(
+  clientId?: string,
+  organizationId?: string,
+  userId?: string,
+): Promise<string> {
+  if (!clientId && !organizationId) return "";
+
+  const where = {
+    OR: [
+      ...(clientId ? [{ clientId }] : []),
+      ...(organizationId ? [{ organizationId, clientId: null }] : []),
+      ...(userId ? [{ userId, clientId: null, organizationId: null }] : []),
+    ],
+  };
+  const CSV_MIMES = new Set(["text/csv", "text/tab-separated-values"]);
+  const chunks: string[] = [];
+  let currentLength = 0;
+  let cursorId: string | undefined;
+
+  // 「新しいファイル優先で先頭15000文字」の挙動を保ちつつ、
+  // 同一時刻はidで順序を固定し、文字上限に達した時点でDB取得を止める。
+  while (currentLength < KNOWLEDGE_TEXT_MAX_CHARS) {
+    const knowledgeFiles = await prisma.knowledgeFile.findMany({
+      where,
+      select: { id: true, name: true, extractedText: true, mimeType: true },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      take: KNOWLEDGE_FILE_PAGE_SIZE,
+      ...(cursorId ? { cursor: { id: cursorId }, skip: 1 } : {}),
+    });
+    if (knowledgeFiles.length === 0) break;
+
+    for (const file of knowledgeFiles) {
+      const journalRows = CSV_MIMES.has(file.mimeType) ? parseJournalCsv(file.extractedText) : null;
+      const formatted = journalRows && journalRows.length >= 5
+        ? `【${file.name}（仕訳データ ${journalRows.length}件を集計）】\n${buildLearningText(journalRows)}`
+        : `【${file.name}】\n${file.extractedText}`;
+      const separator = chunks.length > 0 ? "\n\n" : "";
+      const remaining = KNOWLEDGE_TEXT_MAX_CHARS - currentLength;
+      const nextChunk = `${separator}${formatted}`.substring(0, remaining);
+
+      chunks.push(nextChunk);
+      currentLength += nextChunk.length;
+      if (currentLength >= KNOWLEDGE_TEXT_MAX_CHARS) break;
+    }
+
+    if (knowledgeFiles.length < KNOWLEDGE_FILE_PAGE_SIZE) break;
+    cursorId = knowledgeFiles[knowledgeFiles.length - 1].id;
+  }
+
+  return chunks.join("");
 }
 
 export async function processReceipt(
@@ -51,39 +104,8 @@ export async function processReceipt(
 
   const today = new Date().toISOString().split("T")[0];
 
-  // ナレッジ（仕訳ルール）を取得
-  let knowledgeText = "";
-  if (clientId || organizationId) {
-    const knowledgeFiles = await prisma.knowledgeFile.findMany({
-      where: {
-        OR: [
-          ...(clientId ? [{ clientId }] : []),
-          ...(organizationId ? [{ organizationId, clientId: null }] : []),
-          ...(userId ? [{ userId, clientId: null, organizationId: null }] : []),
-        ],
-      },
-      select: { name: true, extractedText: true, mimeType: true },
-      orderBy: { createdAt: "desc" },
-    });
-
-    if (knowledgeFiles.length > 0) {
-      // 仕訳CSV形状のナレッジ(1年分の仕訳データ等)は生テキストのままだと
-      // 15000文字上限で大半が切り捨てられるため、「摘要→科目」の集計に圧縮してから載せる。
-      // 圧縮対象はCSV/TSVのみ(ルール文章のテキストが仕訳例を含んでいても誤って潰さない)
-      const CSV_MIMES = new Set(["text/csv", "text/tab-separated-values"]);
-      const combined = knowledgeFiles
-        .map((f) => {
-          const journalRows = CSV_MIMES.has(f.mimeType) ? parseJournalCsv(f.extractedText) : null;
-          if (journalRows && journalRows.length >= 5) {
-            return `【${f.name}（仕訳データ ${journalRows.length}件を集計）】\n${buildLearningText(journalRows)}`;
-          }
-          return `【${f.name}】\n${f.extractedText}`;
-        })
-        .join("\n\n");
-      // プロンプトサイズ制限（最大15000文字）
-      knowledgeText = combined.length > KNOWLEDGE_TEXT_MAX_CHARS ? combined.substring(0, KNOWLEDGE_TEXT_MAX_CHARS) : combined;
-    }
-  }
+  // ナレッジ（仕訳ルール）を、プロンプトに実際に入る分だけ段階取得
+  const knowledgeText = await loadKnowledgeText(clientId, organizationId, userId);
 
   // 過去仕訳から学習データを取得。対象は
   // - 確定済み(isConfirmed=true): 税理士がチェック済みの実績

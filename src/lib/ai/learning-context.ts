@@ -11,9 +11,10 @@ export interface PastJournalRow {
 const LEARNING_TEXT_MAX_CHARS = 8000;
 
 /**
- * 摘要の正規化キー。表記ゆれ(半角カナ/全角英数/大文字小文字/金額数字)で
- * 「ローソン」「ﾛｰｿﾝ」「LAWSON渋谷店」が別パターンに分裂するのを抑える。
+ * 摘要の正規化キー。半角/全角・英字大小・金額数字の表記ゆれで
+ * 同じ摘要が別パターンに分裂するのを抑える。
  * NFKCで半角カナ→全角カナ・全角英数→半角英数に寄せる。
+ * 店舗名の翻訳や支店名除去は誤統合を招くため、ここでは行わない。
  */
 function normalizeDescKey(description: string): string {
   return description
