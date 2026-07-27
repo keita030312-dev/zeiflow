@@ -29,7 +29,7 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { compressImage } from "@/lib/image-compress";
 import { readJsonOrThrow, toUserMessage } from "@/lib/api-response";
-import { MAX_UPLOAD_BYTES, ALLOWED_IMAGE_TYPES } from "@/lib/upload-limits";
+import { MAX_UPLOAD_BYTES, ALLOWED_IMAGE_TYPES, MAX_UPLOAD_FILES, ocrParallelBatch } from "@/lib/upload-limits";
 import { STD_ACCOUNTS } from "@/lib/accounts";
 import {
   TAX_CATEGORY_OPTIONS,
@@ -293,7 +293,7 @@ export default function ReceiptsPage() {
           const f = new File([blob], `receipt-${Date.now()}.jpg`, {
             type: "image/jpeg",
           });
-          setFiles((prev) => [...prev, f].slice(0, 5));
+          setFiles((prev) => [...prev, f].slice(0, MAX_UPLOAD_FILES));
           setPreview(null);
           stopCamera();
         }
@@ -319,9 +319,9 @@ export default function ReceiptsPage() {
       if (fileInputRef.current) fileInputRef.current.value = "";
       return;
     }
-    const combined = [...files, ...newFiles].slice(0, 5); // 最大5枚
-    if (files.length + newFiles.length > 5) {
-      toast.error("アップロードは最大5枚までです");
+    const combined = [...files, ...newFiles].slice(0, MAX_UPLOAD_FILES);
+    if (files.length + newFiles.length > MAX_UPLOAD_FILES) {
+      toast.error(`アップロードは最大${MAX_UPLOAD_FILES}枚までです`);
     }
     setFiles(combined);
     if (combined.length === 1) {
@@ -479,10 +479,10 @@ export default function ReceiptsPage() {
         setProcessing(false);
       }
     } else {
-      // Multiple file upload - 2枚ずつ並列処理（精度とスピードのバランス）
+      // Multiple file upload - 並列バッチ処理(サーバーは1リクエスト=1画像で独立。並列数は品質モード別)
       setUploadProgress({ current: 0, total: files.length });
       const allResults: PromiseSettledResult<ReceiptResult | null>[] = [];
-      const BATCH_SIZE = 2;
+      const BATCH_SIZE = ocrParallelBatch(q);
 
       for (let batch = 0; batch < files.length; batch += BATCH_SIZE) {
         const batchFiles = files.slice(batch, batch + BATCH_SIZE);
@@ -960,7 +960,7 @@ export default function ReceiptsPage() {
               {/* Selected Files Preview */}
               {files.length > 0 && !processing && !result && batchRows.length === 0 && (
                 <div className="space-y-3">
-                  <p className="text-xs text-[#94A3B8]">{files.length}/5 枚選択中</p>
+                  <p className="text-xs text-[#94A3B8]">{files.length}/{MAX_UPLOAD_FILES} 枚選択中</p>
                   <div className="flex gap-2 flex-wrap">
                     {files.map((f, i) => (
                       <div key={i} className="relative group">
@@ -977,7 +977,7 @@ export default function ReceiptsPage() {
                         </button>
                       </div>
                     ))}
-                    {files.length < 5 && (
+                    {files.length < MAX_UPLOAD_FILES && (
                       <label className="w-16 h-20 rounded-lg border-2 border-dashed border-[rgba(212,175,55,0.15)] flex flex-col items-center justify-center cursor-pointer hover:border-[rgba(212,175,55,0.3)] transition-colors">
                         <span className="text-[#D4AF37] text-lg">+</span>
                         <span className="text-[9px] text-[#64748B]">追加</span>
@@ -1014,6 +1014,11 @@ export default function ReceiptsPage() {
                       </button>
                     ))}
                   </div>
+                  {files.length >= 10 && uploadQuality !== "fast" && (
+                    <p className="text-[10px] text-[#D4AF37]">
+                      枚数が多い場合は「高速」モードがおすすめです(処理時間 約1/3・読み取り後に個別確認できます)
+                    </p>
+                  )}
                   <Button
                     onClick={() => handleUpload(uploadQuality)}
                     className="w-full bg-gradient-to-r from-[#D4AF37] to-[#B8962E] text-[#0F172A] font-semibold"

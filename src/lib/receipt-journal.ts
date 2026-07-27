@@ -25,6 +25,9 @@ export function buildJournalCreateData(result: OcrProcessRow, ctx: JournalCreate
     userId: ctx.userId,
     ...(ctx.organizationId ? { organizationId: ctx.organizationId } : {}),
     receiptId: ctx.receiptId,
+    // 出自マーカー。OCR生成の未確認仕訳を学習から除外するために使う
+    // (receiptId は削除フローで null 化されるため出自の証明にならない)
+    source: "OCR",
   };
 }
 

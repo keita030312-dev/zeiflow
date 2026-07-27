@@ -5,7 +5,7 @@ import { useState, useEffect, useRef, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { compressImage } from "@/lib/image-compress";
 import { readJsonOrThrow, toUserMessage } from "@/lib/api-response";
-import { MAX_UPLOAD_BYTES, ALLOWED_IMAGE_TYPES } from "@/lib/upload-limits";
+import { MAX_UPLOAD_BYTES, ALLOWED_IMAGE_TYPES, MAX_UPLOAD_FILES, ocrParallelBatch } from "@/lib/upload-limits";
 
 interface UploadResult {
   receiptId: string;
@@ -84,7 +84,7 @@ function PortalPage() {
       });
   }, [token]);
 
-  const MAX_FILES = 5;
+  const MAX_FILES = MAX_UPLOAD_FILES;
 
   function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
     const selected = e.target.files;
@@ -175,7 +175,7 @@ function PortalPage() {
     setUploadProgress({ current: 0, total: files.length });
 
     const settled: PromiseSettledResult<UploadResult>[] = [];
-    const BATCH_SIZE = 2;
+    const BATCH_SIZE = ocrParallelBatch("fast"); // ポータルAPIはfast固定
 
     for (let batch = 0; batch < files.length; batch += BATCH_SIZE) {
       const batchFiles = files.slice(batch, batch + BATCH_SIZE);
@@ -311,7 +311,7 @@ function PortalPage() {
             <p className="text-[#64748B] text-xs">
               タップして写真を選択、または撮影。PCからはドラッグ&ドロップでも読み込めます
             </p>
-            <p className="text-[#64748B] text-xs mt-1">最大5枚まで同時に送れます</p>
+            <p className="text-[#64748B] text-xs mt-1">最大{MAX_FILES}枚まで同時に送れます</p>
             <input
               ref={fileInputRef}
               type="file"
@@ -325,7 +325,7 @@ function PortalPage() {
           {/* Previews */}
           {previews.length > 0 && (
             <div>
-              <p className="text-sm text-[#94A3B8] mb-3">{files.length}/5 枚選択中</p>
+              <p className="text-sm text-[#94A3B8] mb-3">{files.length}/{MAX_FILES} 枚選択中</p>
               <div className="grid grid-cols-3 gap-2">
                 {previews.map((src, i) => (
                   <div key={i} className="relative">

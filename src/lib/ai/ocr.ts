@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { ACCOUNT_CATEGORIES } from "@/types";
 import { prisma } from "@/lib/db";
+import { reportError } from "@/lib/error-reporter";
 import {
   buildInvoiceMainPromptStatic,
   buildOfficialReceiptMainPromptStatic,
@@ -10,6 +11,7 @@ import {
 import type { DocumentKind } from "@/generated/prisma/enums";
 import { ensureOcrResultShape, toSafeInt, type OcrProcessRow } from "@/lib/ocr-result-normalize";
 import { buildLearningText } from "@/lib/ai/learning-context";
+import { parseJournalCsv } from "@/lib/csv/journal-csv";
 import { computeConsensus, parseOcrResponseToArray } from "@/lib/ai/ocr-consensus";
 
 // ===== OCRモデル・制限値（変更時はここだけ直す）=====
@@ -60,29 +62,43 @@ export async function processReceipt(
           ...(userId ? [{ userId, clientId: null, organizationId: null }] : []),
         ],
       },
-      select: { name: true, extractedText: true },
+      select: { name: true, extractedText: true, mimeType: true },
       orderBy: { createdAt: "desc" },
     });
 
     if (knowledgeFiles.length > 0) {
+      // 仕訳CSV形状のナレッジ(1年分の仕訳データ等)は生テキストのままだと
+      // 15000文字上限で大半が切り捨てられるため、「摘要→科目」の集計に圧縮してから載せる。
+      // 圧縮対象はCSV/TSVのみ(ルール文章のテキストが仕訳例を含んでいても誤って潰さない)
+      const CSV_MIMES = new Set(["text/csv", "text/tab-separated-values"]);
       const combined = knowledgeFiles
-        .map((f) => `【${f.name}】\n${f.extractedText}`)
+        .map((f) => {
+          const journalRows = CSV_MIMES.has(f.mimeType) ? parseJournalCsv(f.extractedText) : null;
+          if (journalRows && journalRows.length >= 5) {
+            return `【${f.name}（仕訳データ ${journalRows.length}件を集計）】\n${buildLearningText(journalRows)}`;
+          }
+          return `【${f.name}】\n${f.extractedText}`;
+        })
         .join("\n\n");
       // プロンプトサイズ制限（最大15000文字）
       knowledgeText = combined.length > KNOWLEDGE_TEXT_MAX_CHARS ? combined.substring(0, KNOWLEDGE_TEXT_MAX_CHARS) : combined;
     }
   }
 
-  // 過去の確定済み仕訳から学習データを取得
+  // 過去仕訳から学習データを取得。対象は
+  // - 確定済み(isConfirmed=true): 税理士がチェック済みの実績
+  // - source=IMPORT/MANUAL: CSV取込・手入力(前年度データの一括取込を含む)
+  // OCR生成の未確認仕訳(source=OCR や 出自不明の既存行)は除外する(AIが自分の誤りを学習するループを防ぐ)。
+  // ※receiptId=null での判定は不可(レシート削除・30日画像削除cronで null 化されるため)
   let learningText = "";
   if (clientId) {
     const pastJournals = await prisma.journalEntry.findMany({
       where: {
         clientId,
-        isConfirmed: true,
+        OR: [{ isConfirmed: true }, { source: { in: ["IMPORT", "MANUAL"] } }],
       },
       orderBy: { updatedAt: "desc" },
-      take: 50,
+      take: 2000,
       select: {
         description: true,
         debitAccount: true,
@@ -180,7 +196,7 @@ export async function processReceipt(
 ${knowledgeText ? `■ この事務所/顧問先の仕訳ルール・ナレッジ(優先):
 ${knowledgeText}
 
-` : ""}${learningText ? `■ 過去の確定済み仕訳パターン(最優先で適用):
+` : ""}${learningText ? `■ 過去の仕訳パターン(確定済み仕訳+取込・手入力データより集計。最優先で適用):
 ${learningText}
 
 ` : ""}■ 出力: 必ずJSON配列1個のみ。前後に説明文を付けない。`;
@@ -213,6 +229,18 @@ ${learningText}
   ];
   // Ultra mode: 同じ画像を3回並列推論 → 多数決で合議(コスト3倍・精度最高)
   const ultraCallCount = quality === "ultra" ? 3 : 1;
+
+  // Step4(金額検証OCR)はメインOCRと独立なので並列に走らせる(accurate/ultraの直列3回→実質2回)
+  // 検証OCRの失敗はエラー値として受け、メインOCR成功を巻き添えにしない(検証なし=confidenceブーストなしに縮退)
+  const runAmountValidation = quality === "accurate" || quality === "ultra";
+  const amountPromise = runAmountValidation
+    ? callApi(mainModel, fallbackMain, amountPrompt, 1200).catch((err: unknown) => {
+        // 縮退したことを観測可能にする(恒常的な検証スキップに気づけるように)
+        reportError(err instanceof Error ? err : new Error(String(err)), { source: "ocr-amount-validation" });
+        return err;
+      })
+    : null;
+
   const mainResponses = await Promise.all(
     Array.from({ length: ultraCallCount }, () =>
       callApi(mainModel, fallbackMain, mainMessageContent, 2000),
@@ -231,11 +259,13 @@ ${learningText}
   } else {
     invoiceResponse = { content: [{ type: "text" as const, text: "null" }] };
   }
-  // Step4: accurate / ultra モードでは日付/金額の検証OCRを追加で実行
-  const runAmountValidation = quality === "accurate" || quality === "ultra";
-  const amountResponse = runAmountValidation
-    ? await callApi(mainModel, fallbackMain, amountPrompt, 1200)
-    : { content: [{ type: "text" as const, text: "[]" }] };
+  // Step4: 並列実行していた金額検証OCRの結果を回収(失敗時は検証なしで続行)
+  const emptyAmountResponse = { content: [{ type: "text" as const, text: "[]" }] };
+  const amountSettled = amountPromise ? await amountPromise : emptyAmountResponse;
+  const amountResponse =
+    amountSettled instanceof Error || !(amountSettled as { content?: unknown }).content
+      ? emptyAmountResponse
+      : (amountSettled as typeof mainResponse);
 
   // メインOCRの結果をパース(複数レスポンスがある場合は合議)
   const mainText = mainResponse.content[0].type === "text" ? mainResponse.content[0].text : "";
