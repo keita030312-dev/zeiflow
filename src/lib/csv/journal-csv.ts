@@ -139,6 +139,25 @@ export function parseJournalCsv(text: string): PastJournalRow[] | null {
   return rows;
 }
 
+const ERA_DEFINITIONS: Record<string, { base: number; start: string; end?: string }> = {
+  令和: { base: 2018, start: "2019-05-01" },
+  R: { base: 2018, start: "2019-05-01" },
+  平成: { base: 1988, start: "1989-01-08", end: "2019-04-30" },
+  H: { base: 1988, start: "1989-01-08", end: "2019-04-30" },
+  昭和: { base: 1925, start: "1926-12-25", end: "1989-01-07" },
+  S: { base: 1925, start: "1926-12-25", end: "1989-01-07" },
+};
+
+function createStrictDate(year: number, month: number, day: number): Date | null {
+  if (year < 1 || month < 1 || month > 12 || day < 1 || day > 31) return null;
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return date.getUTCFullYear() === year &&
+    date.getUTCMonth() === month - 1 &&
+    date.getUTCDate() === day
+    ? date
+    : null;
+}
+
 /**
  * 取込CSVの日付を寛容にパースする。会計ソフトのエクスポートは
  * 「2026/07/21」「2026年7月21日」のほか和暦「令和8年7月21日」「R8.7.21」「R.08/07/21」がある。
@@ -149,23 +168,37 @@ export function parseFlexibleDate(raw: string): Date | null {
   if (!s) return null;
 
   // 和暦 → 西暦(令和R=2018起点, 平成H=1988起点, 昭和S=1925起点)
-  const eraMatch = s.match(/^(令和|平成|昭和|[RHS])\.?\s*(\d{1,2})[年./](\d{1,2})[月./](\d{1,2})日?$/i);
+  const eraMatch = s.match(/^(令和|平成|昭和|[RHS])\.?\s*(元|\d{1,2})[年./-](\d{1,2})[月./-](\d{1,2})日?$/i);
   if (eraMatch) {
-    const eraBase: Record<string, number> = { 令和: 2018, R: 2018, 平成: 1988, H: 1988, 昭和: 1925, S: 1925 };
-    const base = eraBase[eraMatch[1].toUpperCase()];
-    if (base) {
-      const d = new Date(base + parseInt(eraMatch[2], 10), parseInt(eraMatch[3], 10) - 1, parseInt(eraMatch[4], 10));
-      return isNaN(d.getTime()) ? null : d;
+    const era = ERA_DEFINITIONS[eraMatch[1].toUpperCase()];
+    const eraYear = eraMatch[2] === "元" ? 1 : parseInt(eraMatch[2], 10);
+    if (era && eraYear >= 1) {
+      const date = createStrictDate(
+        era.base + eraYear,
+        parseInt(eraMatch[3], 10),
+        parseInt(eraMatch[4], 10),
+      );
+      if (!date) return null;
+
+      const isoDate = date.toISOString().slice(0, 10);
+      if (isoDate < era.start || (era.end && isoDate > era.end)) return null;
+      return date;
     }
+    return null;
   }
 
-  // 「2026年7月21日」→「2026/7/21」
+  // 「2026年7月21日」
   const jp = s.match(/^(\d{4})年(\d{1,2})月(\d{1,2})日$/);
   if (jp) {
-    const d = new Date(parseInt(jp[1], 10), parseInt(jp[2], 10) - 1, parseInt(jp[3], 10));
-    return isNaN(d.getTime()) ? null : d;
+    return createStrictDate(parseInt(jp[1], 10), parseInt(jp[2], 10), parseInt(jp[3], 10));
   }
 
-  const d = new Date(s);
-  return isNaN(d.getTime()) ? null : d;
+  // 西暦の年月日。Dateコンストラクタへ直接渡すと2月30日を3月2日に補正するため、
+  // 数値を分解して同じ年月日に戻ることまで検証する。
+  const western = s.match(/^(\d{4})[./-](\d{1,2})[./-](\d{1,2})$/);
+  if (western) {
+    return createStrictDate(parseInt(western[1], 10), parseInt(western[2], 10), parseInt(western[3], 10));
+  }
+
+  return null;
 }

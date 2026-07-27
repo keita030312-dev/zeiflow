@@ -17,13 +17,20 @@ for (let i = 0; i < 30; i++) rows.push({ description: `ローソン ${i}`, debit
 const text1 = buildLearningText(rows);
 check("多数決でローソン→会議費", /「ローソン」→ 会議費\/現金（30回）/.test(text1), "\n" + text1.slice(0, 300));
 
-// --- 2. 表記ゆれ統合: 半角カナ・英字大小 ---
+// --- 2. 表記ゆれ統合: 半角カナ・全角英数・英字大小 ---
 const rows2 = [
-  { description: "ﾛｰｿﾝ", debitAccount: "会議費", creditAccount: "現金", amount: 100, taxRate: null },
-  { description: "ローソン 渋谷", debitAccount: "会議費", creditAccount: "現金", amount: 100, taxRate: null },
+  { description: "ﾛｰｿﾝ 123", debitAccount: "会議費", creditAccount: "現金", amount: 100, taxRate: null },
+  { description: "ローソン 456", debitAccount: "会議費", creditAccount: "現金", amount: 100, taxRate: null },
 ];
 const text2 = buildLearningText(rows2);
-check("半角カナ→全角統合(2回に集約)", text2.includes("（2回）"), "\n" + text2.slice(0, 200));
+check("半角カナ→全角統合(摘要を2回に集約)", text2.includes("「ローソン」→ 会議費/現金（2回）"), "\n" + text2.slice(0, 200));
+
+const latinRows = [
+  { description: "ＬＡＷＳＯＮ 123", debitAccount: "会議費", creditAccount: "現金", amount: 100, taxRate: null },
+  { description: "lawson 456", debitAccount: "会議費", creditAccount: "現金", amount: 100, taxRate: null },
+];
+const latinText = buildLearningText(latinRows);
+check("全角英字・英字大小を統合", latinText.includes("「lawson」→ 会議費/現金（2回）"), "\n" + latinText.slice(0, 200));
 
 // --- 3. 仕訳CSVパース(ZeiFlow形式) ---
 const csv = "日付,借方科目,貸方科目,金額,摘要\n2025-04-01,会議費,現金,181,ローソン\n2025-04-02,会議費,現金,1325,肉のハナマサ\n";
@@ -79,18 +86,37 @@ check("説明文1セルの偽ヘッダーをスキップ", trapParsed?.length ==
 const dateCases = [
   ["2026/07/21", "2026-07-21"],
   ["2026-07-21", "2026-07-21"],
+  ["2024-02-29", "2024-02-29"],
   ["2026年7月21日", "2026-07-21"],
   ["令和8年7月21日", "2026-07-21"],
+  ["令和元年5月1日", "2019-05-01"],
+  ["平成31年4月30日", "2019-04-30"],
+  ["平成元年1月8日", "1989-01-08"],
+  ["昭和64年1月7日", "1989-01-07"],
   ["R.08/04/01", "2026-04-01"],
   ["R8.4.1", "2026-04-01"],
   ["平成30年1月5日", "2018-01-05"],
 ];
 for (const [input, expected] of dateCases) {
   const d = parseFlexibleDate(input);
-  const got = d ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}` : "null";
+  const got = d ? d.toISOString().slice(0, 10) : "null";
   check(`日付 ${input} → ${expected}`, got === expected, `got=${got}`);
 }
-check("不正な日付は null", parseFlexibleDate("あいうえお") === null);
+for (const invalidDate of [
+  "あいうえお",
+  "2026-02-30",
+  "2026年2月30日",
+  "令和8年2月30日",
+  "2025-02-29",
+  "2026-13-01",
+  "2026-00-01",
+  "令和元年1月1日",
+  "平成31年5月1日",
+  "平成元年1月7日",
+  "昭和64年1月8日",
+]) {
+  check(`不正な日付 ${invalidDate} は null`, parseFlexibleDate(invalidDate) === null);
+}
 
 // --- 4. Shift-JIS デコード ---
 const sjisBuf = iconv.encode(csv, "shift_jis");
