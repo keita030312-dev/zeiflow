@@ -111,5 +111,8 @@ export function parseJournalCsv(text: string): PastJournalRow[] | null {
       taxRate: null,
     });
   }
-  return rows.length > 0 ? rows : null;
+  // 有効行が半分未満なら仕訳CSVとみなさない
+  // (仕訳例を数行含むだけのルール文章を誤って集計に置換し、本文を捨てるのを防ぐ)
+  if (rows.length === 0 || rows.length < (lines.length - 1) * 0.5) return null;
+  return rows;
 }

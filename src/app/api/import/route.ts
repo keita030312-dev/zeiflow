@@ -64,6 +64,7 @@ export async function POST(req: NextRequest) {
           clientId,
           userId: auth.id,
           ...(auth.orgId ? { organizationId: auth.orgId } : {}),
+          source: "IMPORT", // 取込データ=学習対象(OCR未確認出力と区別する)
         });
       } catch (e) {
         errors.push(`行${i + 1}: ${e instanceof Error ? e.message : "不明なエラー"}`);

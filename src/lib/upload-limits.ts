@@ -17,7 +17,11 @@ export const WIRE_SAFE_BYTES = 4 * 1024 * 1024; // 4MB
 export const MAX_UPLOAD_FILES = 20;
 
 /**
- * OCRの同時並列数。1枚あたり最大3回のAnthropic API呼び出しがあるため、
- * 4並列=瞬間最大12リクエスト程度に抑える(429はocr.ts側でリトライされる)。
+ * OCRの同時並列数(品質モード別)。
+ * 1枚あたりの同時APIコール数は fast=1〜2 / accurate=2〜3 / ultra=最大5 のため、
+ * 瞬間同時コールが12前後に収まるよう品質側で絞る
+ * (429はocr.ts側でリトライされるが、待機は計2.4秒しかなく低Tierキーでは吸収しきれない)。
  */
-export const OCR_PARALLEL_BATCH = 4;
+export function ocrParallelBatch(quality: "fast" | "accurate" | "ultra"): number {
+  return quality === "fast" ? 4 : quality === "accurate" ? 3 : 2;
+}

@@ -42,9 +42,10 @@ class PatternCounter {
     else entry.pairs.set(pairKey, { debit, credit, count: 1 });
   }
 
-  /** 出現回数順に上位limit件を [ラベル, 多数決ペア, ペア回数, 総回数] で返す */
-  top(limit: number): { label: string; debit: string; credit: string; count: number; total: number }[] {
+  /** 総出現回数がminTotal以上のものから、出現回数順に上位limit件を返す(filterはsliceより先) */
+  top(limit: number, minTotal = 1): { label: string; debit: string; credit: string; count: number; total: number }[] {
     return Array.from(this.map.values())
+      .filter((entry) => entry.total >= minTotal)
       .sort((a, b) => b.total - a.total)
       .slice(0, limit)
       .map((entry) => {
@@ -93,8 +94,7 @@ export function buildLearningText(pastJournals: PastJournalRow[]): string {
     .map((p) => `キーワード「${p.label}」を含む → ${p.debit}/${p.credit}（${p.count}回）`);
 
   const amLines = amountPatterns
-    .top(10)
-    .filter((p) => p.count >= 2)
+    .top(10, 2)
     .map((p) => `${p.label} → 貸方:${p.credit}（${p.count}回）`);
 
   const text = [

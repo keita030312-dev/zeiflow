@@ -169,6 +169,7 @@ async function handlePost(req: NextRequest) {
           : undefined),
       userId: auth.id,
       ...(auth.orgId ? { organizationId: auth.orgId } : {}),
+      source: "MANUAL", // 手入力=学習対象(OCR未確認出力と区別する)
     },
   });
 

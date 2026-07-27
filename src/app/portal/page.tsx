@@ -5,7 +5,7 @@ import { useState, useEffect, useRef, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { compressImage } from "@/lib/image-compress";
 import { readJsonOrThrow, toUserMessage } from "@/lib/api-response";
-import { MAX_UPLOAD_BYTES, ALLOWED_IMAGE_TYPES, MAX_UPLOAD_FILES, OCR_PARALLEL_BATCH } from "@/lib/upload-limits";
+import { MAX_UPLOAD_BYTES, ALLOWED_IMAGE_TYPES, MAX_UPLOAD_FILES, ocrParallelBatch } from "@/lib/upload-limits";
 
 interface UploadResult {
   receiptId: string;
@@ -175,7 +175,7 @@ function PortalPage() {
     setUploadProgress({ current: 0, total: files.length });
 
     const settled: PromiseSettledResult<UploadResult>[] = [];
-    const BATCH_SIZE = OCR_PARALLEL_BATCH;
+    const BATCH_SIZE = ocrParallelBatch("fast"); // ポータルAPIはfast固定
 
     for (let batch = 0; batch < files.length; batch += BATCH_SIZE) {
       const batchFiles = files.slice(batch, batch + BATCH_SIZE);

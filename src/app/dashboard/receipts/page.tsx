@@ -29,7 +29,7 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { compressImage } from "@/lib/image-compress";
 import { readJsonOrThrow, toUserMessage } from "@/lib/api-response";
-import { MAX_UPLOAD_BYTES, ALLOWED_IMAGE_TYPES, MAX_UPLOAD_FILES, OCR_PARALLEL_BATCH } from "@/lib/upload-limits";
+import { MAX_UPLOAD_BYTES, ALLOWED_IMAGE_TYPES, MAX_UPLOAD_FILES, ocrParallelBatch } from "@/lib/upload-limits";
 import { STD_ACCOUNTS } from "@/lib/accounts";
 import {
   TAX_CATEGORY_OPTIONS,
@@ -479,10 +479,10 @@ export default function ReceiptsPage() {
         setProcessing(false);
       }
     } else {
-      // Multiple file upload - 並列バッチ処理(サーバーは1リクエスト=1画像で独立)
+      // Multiple file upload - 並列バッチ処理(サーバーは1リクエスト=1画像で独立。並列数は品質モード別)
       setUploadProgress({ current: 0, total: files.length });
       const allResults: PromiseSettledResult<ReceiptResult | null>[] = [];
-      const BATCH_SIZE = OCR_PARALLEL_BATCH;
+      const BATCH_SIZE = ocrParallelBatch(q);
 
       for (let batch = 0; batch < files.length; batch += BATCH_SIZE) {
         const batchFiles = files.slice(batch, batch + BATCH_SIZE);

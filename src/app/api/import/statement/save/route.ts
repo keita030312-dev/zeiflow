@@ -43,6 +43,7 @@ export async function POST(req: NextRequest) {
       date: Date; debitAccount: string; creditAccount: string; amount: number;
       taxAmount: number | null; taxRate: number | null; description: string;
       memo: string | null; clientId: string; userId: string; organizationId: string | null;
+      source: string;
     };
     const entries: EntryInput[] = [];
 
@@ -68,6 +69,7 @@ export async function POST(req: NextRequest) {
           clientId,
           userId: auth.id,
           organizationId: auth.orgId || null,
+          source: "IMPORT", // 取込データ=学習対象(OCR未確認出力と区別する)
         });
       } catch (e) {
         errors.push(`行${i + 1}: ${e instanceof Error ? e.message : "不明なエラー"}`);
