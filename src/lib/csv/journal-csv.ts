@@ -89,6 +89,9 @@ export function detectJournalHeader(header: string[]): JournalCsvHeader | null {
   const creditIdx = header.findIndex((h) => /貸方|credit/i.test(h));
   const amountIdx = header.findIndex((h) => /金額|amount/i.test(h));
   if (dateIdx === -1 || debitIdx === -1 || creditIdx === -1 || amountIdx === -1) return null;
+  // 4列が同一セルを指す場合はヘッダーではない
+  // (前置き行の「日付・借方・貸方・金額の順で…」のような説明文1セルへの誤爆を防ぐ)
+  if (new Set([dateIdx, debitIdx, creditIdx, amountIdx]).size !== 4) return null;
   return {
     dateIdx,
     debitIdx,
