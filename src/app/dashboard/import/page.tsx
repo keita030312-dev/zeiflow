@@ -317,7 +317,7 @@ export default function ImportPage() {
                     <div className="flex items-center gap-2 p-3 rounded-lg bg-blue-500/10 border border-blue-500/20">
                       <Info className="h-4 w-4 text-blue-400 shrink-0" />
                       <span className="text-sm text-blue-300">
-                        対象外 {result.skipped}件を読み飛ばしました(日計・月計などの合計行や金額のない行。エラーではありません)
+                        対象外 {result.skipped}件を読み飛ばしました(日計・月計・累計など、明示された集計行)
                       </span>
                     </div>
                   )}

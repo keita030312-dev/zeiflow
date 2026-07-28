@@ -39,7 +39,8 @@ export async function POST(req: NextRequest) {
       }, { status: 400 });
     }
     // 和暦(令和8年/R8.7.21)・「2026年7月21日」形式も許容。
-    // 集計行([日計行][月計行]等)や金額のない行はエラーでなく「対象外」として読み飛ばす
+    // 明示的な集計行([日計行][月計行]等)だけを「対象外」として読み飛ばす。
+    // 通常明細の必須値欠落はエラーになり、複合伝票は不正行があれば伝票全体が除外される。
     const { rows, skipped, errors } = parseImportRows(lines, found.header, found.headerLineIdx);
 
     const entries = rows.map((row) => ({

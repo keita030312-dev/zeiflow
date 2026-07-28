@@ -119,8 +119,7 @@ for (const invalidDate of [
 }
 
 // --- 3e. 取込行分類: 弥生の帳簿エクスポート(集計行・複合仕訳混在)を再現 ---
-// 実顧客ファイル(2026-07-28問い合わせ)の構造: 集計行[日計行][月計行]は日付が空、
-// 複合仕訳の相手側行は借方金額が空 → どちらもエラーでなく skipped になること
+// 明示された集計行だけを skipped とし、複合仕訳の不完全な行はエラーにする。
 const ledger = [
   '"【帳簿名】","仕訳日記帳"',
   '"【事業所名】","テスト株式会社"',
@@ -138,11 +137,33 @@ const ledgerHeader = findJournalHeader(ledgerLines);
 check("帳簿形式: ヘッダー検出(前置き3行スキップ)", ledgerHeader?.headerLineIdx === 3);
 if (ledgerHeader) {
   const { rows: impRows, skipped, errors: impErrors } = parseImportRows(ledgerLines, ledgerHeader.header, ledgerHeader.headerLineIdx);
-  check("帳簿形式: 明細2行を取込", impRows.length === 2, `got=${impRows.length}`);
+  check("帳簿形式: 完全な明細1行だけを取込", impRows.length === 1, `got=${impRows.length}`);
   check("帳簿形式: 和暦日付を解釈", impRows[0]?.date.toISOString().slice(0, 10) === "2024-08-01");
-  check("帳簿形式: 集計行2+金額なし行1=skipped3(エラーでない)", skipped === 3, `skipped=${skipped}`);
-  check("帳簿形式: 不正日付だけがエラー1件", impErrors.length === 1 && impErrors[0].includes("無効な日付"), JSON.stringify(impErrors));
+  check("帳簿形式: 明示的な集計行2件だけをskipped", skipped === 2, `skipped=${skipped}`);
+  check("帳簿形式: 不正日付と必須値欠落がエラー", impErrors.length === 3 && impErrors.some((e) => e.includes("無効な日付")) && impErrors.some((e) => e.includes("金額")), JSON.stringify(impErrors));
   check("帳簿形式: 摘要/科目/金額", impRows[0]?.description === "だんらん亭" && impRows[0]?.debitAccount === "交際費" && impRows[0]?.amount === 36930);
+  check("帳簿形式: 空科目行はrowsへ入らない", impRows.every((row) => row.debitAccount && row.creditAccount));
+}
+
+// --- 3f. 不完全な複合伝票を部分保存しない ---
+const safetyLedger = [
+  '"[仕訳行区分]","日付","伝票No.","借方科目","貸方科目","金額","摘要"',
+  '"[明細行]","2026-07-01",10,"旅費交通費","現金",1000,"複合の有効側"',
+  '"[明細行]","2026-07-01",10,"会議費","現金",,"複合の金額欠落側"',
+  '"[明細行]","2026-07-02",11,,"現金",500,"借方欠落"',
+  '"[明細行]","2026-07-03",12,"消耗品費","現金",,"通常の金額欠落"',
+  '"[明細行]","2026-07-04",13,"通信費","現金",300,"独立した正常伝票"',
+  '"[累計行]","","","","",1800,""',
+].join("\n");
+const safetyLines = safetyLedger.split("\n");
+const safetyHeader = findJournalHeader(safetyLines);
+check("安全策: ヘッダーから行区分と伝票番号を検出", safetyHeader?.header.rowTypeIdx === 0 && safetyHeader?.header.voucherIdx === 2);
+if (safetyHeader) {
+  const safety = parseImportRows(safetyLines, safetyHeader.header, safetyHeader.headerLineIdx);
+  check("安全策: 明確な累計行だけskipped", safety.skipped === 1, `skipped=${safety.skipped}`);
+  check("安全策: 通常明細の金額欠落はエラー", safety.errors.some((e) => e.includes("行5") && e.includes("金額")), JSON.stringify(safety.errors));
+  check("安全策: 空科目行はrowsへ入らない", safety.rows.every((row) => row.debitAccount && row.creditAccount));
+  check("安全策: 不完全な複合伝票を部分保存しない", safety.rows.length === 1 && safety.rows[0]?.amount === 300 && safety.errors.some((e) => e.includes("伝票10")), JSON.stringify(safety));
 }
 
 // --- 4. Shift-JIS デコード ---

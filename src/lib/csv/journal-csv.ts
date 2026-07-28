@@ -60,6 +60,8 @@ export interface JournalCsvHeader {
   debitIdx: number;
   creditIdx: number;
   amountIdx: number;
+  rowTypeIdx: number;
+  voucherIdx: number;
   descIdx: number;
   taxIdx: number;
   invoiceIdx: number;
@@ -97,6 +99,8 @@ export function detectJournalHeader(header: string[]): JournalCsvHeader | null {
     debitIdx,
     creditIdx,
     amountIdx,
+    rowTypeIdx: header.findIndex((h) => /^(?:\[)?仕訳行区分(?:\])?$/.test(h.normalize("NFKC").trim())),
+    voucherIdx: header.findIndex((h) => /^伝票\s*(?:No\.?|番号)$/i.test(h.normalize("NFKC").trim())),
     descIdx: header.findIndex((h) => /摘要|description|内容/i.test(h)),
     taxIdx: header.findIndex((h) => /税額|tax/i.test(h)),
     invoiceIdx: header.findIndex((h) => /登録番号|invoice|インボイス/i.test(h)),
@@ -153,7 +157,7 @@ export interface ImportRow {
 
 export interface ImportParseResult {
   rows: ImportRow[];
-  /** 取込対象外として読み飛ばした行数(集計行・金額のない行) */
+  /** 取込対象外として読み飛ばした行数(明示された集計行のみ) */
   skipped: number;
   /** 仕訳明細のはずなのに解釈できなかった行 */
   errors: string[];
@@ -161,53 +165,92 @@ export interface ImportParseResult {
 
 /**
  * 取込CSVのデータ行を仕訳行に変換する。
- * 弥生の帳簿エクスポートには仕訳でない集計行([日計行][月計行][累計行]=日付が空)や、
- * 複合仕訳の相手側行(金額欄が空)が混ざる。これらは入力ミスではなく取込対象外なので、
- * エラーではなく skipped に数える(赤エラー表示にすると顧客が取込失敗と誤解する)。
+ * 弥生の帳簿エクスポートに含まれる明示的な集計行
+ * ([日計行][月計行][累計行]等)だけは、仕訳ではないため skipped に数える。
+ * 通常明細の必須値欠落は errors とし、同一伝票に不正行があればその伝票の
+ * 有効行も除外して、複合仕訳の片側だけが保存されることを防ぐ。
  */
 export function parseImportRows(
   lines: string[],
   header: JournalCsvHeader,
   headerLineIdx: number,
 ): ImportParseResult {
-  const rows: ImportRow[] = [];
+  const candidates: Array<{ row: ImportRow; voucherKey: string | null }> = [];
   const errors: string[] = [];
+  const invalidVouchers = new Set<string>();
   let skipped = 0;
 
   for (let i = headerLineIdx + 1; i < lines.length; i++) {
     const cols = parseCsvLine(lines[i]);
     const rawDate = (cols[header.dateIdx] || "").trim();
     const rawAmount = (cols[header.amountIdx] || "").replace(/[,¥\\]/g, "").trim();
-    if (!rawDate || !rawAmount) {
+    const debitAccount = (cols[header.debitIdx] || "").trim();
+    const creditAccount = (cols[header.creditIdx] || "").trim();
+    const voucher = header.voucherIdx >= 0 ? (cols[header.voucherIdx] || "").trim() : "";
+    const voucherKey = voucher ? voucher : null;
+    const rowType = header.rowTypeIdx >= 0
+      ? (cols[header.rowTypeIdx] || "").normalize("NFKC").replace(/\s/g, "")
+      : "";
+
+    // 空欄かどうかではなく、行区分が明確に集計を示す場合だけ harmless skip にする。
+    if (/^\[(?:日計|月計|累計|週計|年計|期間計|合計)行\]$/.test(rowType)) {
       skipped++;
+      continue;
+    }
+
+    const missing: string[] = [];
+    if (!rawDate) missing.push("日付");
+    if (!rawAmount) missing.push("金額");
+    if (!debitAccount) missing.push("借方科目");
+    if (!creditAccount) missing.push("貸方科目");
+    if (missing.length > 0) {
+      errors.push(`行${i + 1}: ${missing.join("・")}がありません`);
+      if (voucherKey) invalidVouchers.add(voucherKey);
       continue;
     }
 
     const date = parseFlexibleDate(rawDate);
     if (!date) {
       errors.push(`行${i + 1}: 無効な日付`);
+      if (voucherKey) invalidVouchers.add(voucherKey);
       continue;
     }
     const amount = parseInt(rawAmount, 10);
     if (isNaN(amount) || amount <= 0) {
       errors.push(`行${i + 1}: 無効な金額`);
+      if (voucherKey) invalidVouchers.add(voucherKey);
       continue;
     }
 
-    rows.push({
-      date,
-      debitAccount: cols[header.debitIdx],
-      creditAccount: cols[header.creditIdx],
-      amount,
-      taxAmount:
-        header.taxIdx >= 0
-          ? parseInt(cols[header.taxIdx]?.replace(/[,¥\\]/g, "") || "0", 10) || null
-          : null,
-      description: header.descIdx >= 0 ? cols[header.descIdx] || `インポート行${i}` : `インポート行${i}`,
-      invoiceNumber: header.invoiceIdx >= 0 ? cols[header.invoiceIdx] || null : null,
-      memo: header.memoIdx >= 0 ? cols[header.memoIdx] || null : null,
+    candidates.push({
+      voucherKey,
+      row: {
+        date,
+        debitAccount,
+        creditAccount,
+        amount,
+        taxAmount:
+          header.taxIdx >= 0
+            ? parseInt(cols[header.taxIdx]?.replace(/[,¥\\]/g, "") || "0", 10) || null
+            : null,
+        description: header.descIdx >= 0 ? cols[header.descIdx] || `インポート行${i}` : `インポート行${i}`,
+        invoiceNumber: header.invoiceIdx >= 0 ? cols[header.invoiceIdx] || null : null,
+        memo: header.memoIdx >= 0 ? cols[header.memoIdx] || null : null,
+      },
     });
   }
+
+  const blockedVouchers = new Set(
+    candidates
+      .filter(({ voucherKey }) => voucherKey !== null && invalidVouchers.has(voucherKey))
+      .map(({ voucherKey }) => voucherKey as string),
+  );
+  for (const voucher of blockedVouchers) {
+    errors.push(`伝票${voucher}: 不正な明細を含むため、伝票全体を取り込みませんでした`);
+  }
+  const rows = candidates
+    .filter(({ voucherKey }) => voucherKey === null || !invalidVouchers.has(voucherKey))
+    .map(({ row }) => row);
 
   return { rows, skipped, errors };
 }
