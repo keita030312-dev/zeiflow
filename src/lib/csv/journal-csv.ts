@@ -175,32 +175,70 @@ export function parseImportRows(
   header: JournalCsvHeader,
   headerLineIdx: number,
 ): ImportParseResult {
-  const candidates: Array<{
-    row: ImportRow;
-    voucher: string | null;
-    voucherKey: string | null;
-  }> = [];
+  const candidates: Array<{ row: ImportRow; voucherKey: string | null }> = [];
   const errors: string[] = [];
   const invalidVouchers = new Set<string>();
-  const ambiguousInvalidVoucherNumbers = new Set<string>();
   let skipped = 0;
 
-  for (let i = headerLineIdx + 1; i < lines.length; i++) {
-    const cols = parseCsvLine(lines[i]);
+  const records = lines.slice(headerLineIdx + 1).map((line, offset) => {
+    const cols = parseCsvLine(line);
     const rawDate = (cols[header.dateIdx] || "").trim();
-    const rawAmount = (cols[header.amountIdx] || "").replace(/[,¥\\]/g, "").trim();
-    const debitAccount = (cols[header.debitIdx] || "").trim();
-    const creditAccount = (cols[header.creditIdx] || "").trim();
-    const voucher = header.voucherIdx >= 0 ? (cols[header.voucherIdx] || "").trim() : "";
-    const parsedDate = rawDate ? parseFlexibleDate(rawDate) : null;
-    const normalizedDate = parsedDate?.toISOString().slice(0, 10) ?? null;
-    const voucherKey = voucher && normalizedDate ? `${normalizedDate}\u0000${voucher}` : null;
     const rowType = header.rowTypeIdx >= 0
       ? (cols[header.rowTypeIdx] || "").normalize("NFKC").replace(/\s/g, "")
       : "";
+    return {
+      cols,
+      lineIdx: headerLineIdx + 1 + offset,
+      rawDate,
+      parsedDate: rawDate ? parseFlexibleDate(rawDate) : null,
+      voucher: header.voucherIdx >= 0 ? (cols[header.voucherIdx] || "").trim() : "",
+      isSummary: /^\[(?:日計|月計|累計|週計|年計|期間計|合計)行\]$/.test(rowType),
+    };
+  });
+
+  const datedVoucherKey = (record: (typeof records)[number]): string | null =>
+    record.voucher && record.parsedDate
+      ? `${record.parsedDate.toISOString().slice(0, 10)}\u0000${record.voucher}`
+      : null;
+
+  /**
+   * 日付不明行は、連続する同一伝票Noの前後だけを見て帰属させる。
+   * 直前の有効日付があればその伝票を優先し、なければ直後へ帰属させる。
+   * 集計行または別の伝票Noを越えて探索しないため、影響は局所ブロックに限られる。
+   */
+  const resolveVoucherKey = (recordIdx: number): string | null => {
+    const record = records[recordIdx];
+    if (!record.voucher) return null;
+    const ownKey = datedVoucherKey(record);
+    if (ownKey) return ownKey;
+
+    let before: string | null = null;
+    for (let i = recordIdx - 1; i >= 0; i--) {
+      const adjacent = records[i];
+      if (adjacent.isSummary || adjacent.voucher !== record.voucher) break;
+      before = datedVoucherKey(adjacent);
+      if (before) break;
+    }
+    let after: string | null = null;
+    for (let i = recordIdx + 1; i < records.length; i++) {
+      const adjacent = records[i];
+      if (adjacent.isSummary || adjacent.voucher !== record.voucher) break;
+      after = datedVoucherKey(adjacent);
+      if (after) break;
+    }
+
+    return before ?? after ?? `local\u0000${record.voucher}\u0000${record.lineIdx}`;
+  };
+
+  for (let recordIdx = 0; recordIdx < records.length; recordIdx++) {
+    const { cols, lineIdx, rawDate, parsedDate, isSummary } = records[recordIdx];
+    const rawAmount = (cols[header.amountIdx] || "").replace(/[,¥\\]/g, "").trim();
+    const debitAccount = (cols[header.debitIdx] || "").trim();
+    const creditAccount = (cols[header.creditIdx] || "").trim();
+    const voucherKey = resolveVoucherKey(recordIdx);
 
     // 空欄かどうかではなく、行区分が明確に集計を示す場合だけ harmless skip にする。
-    if (/^\[(?:日計|月計|累計|週計|年計|期間計|合計)行\]$/.test(rowType)) {
+    if (isSummary) {
       skipped++;
       continue;
     }
@@ -211,30 +249,24 @@ export function parseImportRows(
     if (!debitAccount) missing.push("借方科目");
     if (!creditAccount) missing.push("貸方科目");
     if (missing.length > 0) {
-      errors.push(`行${i + 1}: ${missing.join("・")}がありません`);
-      if (voucher) {
-        // 日付がなければ実際の伝票単位を特定できないため、片側保存を避けて
-        // 同じ伝票番号の候補をすべて止める。日付があればその日付の伝票だけを止める。
-        if (voucherKey) invalidVouchers.add(voucherKey);
-        else ambiguousInvalidVoucherNumbers.add(voucher);
-      }
+      errors.push(`行${lineIdx + 1}: ${missing.join("・")}がありません`);
+      if (voucherKey) invalidVouchers.add(voucherKey);
       continue;
     }
 
     if (!parsedDate) {
-      errors.push(`行${i + 1}: 無効な日付`);
-      if (voucher) ambiguousInvalidVoucherNumbers.add(voucher);
+      errors.push(`行${lineIdx + 1}: 無効な日付`);
+      if (voucherKey) invalidVouchers.add(voucherKey);
       continue;
     }
     const amount = parseInt(rawAmount, 10);
     if (isNaN(amount) || amount <= 0) {
-      errors.push(`行${i + 1}: 無効な金額`);
+      errors.push(`行${lineIdx + 1}: 無効な金額`);
       if (voucherKey) invalidVouchers.add(voucherKey);
       continue;
     }
 
     candidates.push({
-      voucher: voucher || null,
       voucherKey,
       row: {
         date: parsedDate,
@@ -245,7 +277,7 @@ export function parseImportRows(
           header.taxIdx >= 0
             ? parseInt(cols[header.taxIdx]?.replace(/[,¥\\]/g, "") || "0", 10) || null
             : null,
-        description: header.descIdx >= 0 ? cols[header.descIdx] || `インポート行${i}` : `インポート行${i}`,
+        description: header.descIdx >= 0 ? cols[header.descIdx] || `インポート行${lineIdx}` : `インポート行${lineIdx}`,
         invoiceNumber: header.invoiceIdx >= 0 ? cols[header.invoiceIdx] || null : null,
         memo: header.memoIdx >= 0 ? cols[header.memoIdx] || null : null,
       },
@@ -254,10 +286,7 @@ export function parseImportRows(
 
   const blockedVouchers = new Set(
     candidates
-      .filter(({ voucher, voucherKey }) =>
-        (voucherKey !== null && invalidVouchers.has(voucherKey)) ||
-        (voucher !== null && ambiguousInvalidVoucherNumbers.has(voucher))
-      )
+      .filter(({ voucherKey }) => voucherKey !== null && invalidVouchers.has(voucherKey))
       .map(({ voucherKey }) => voucherKey as string),
   );
   for (const voucherKey of blockedVouchers) {
@@ -265,10 +294,7 @@ export function parseImportRows(
     errors.push(`伝票${voucher} (${date}): 不正な明細を含むため、伝票全体を取り込みませんでした`);
   }
   const rows = candidates
-    .filter(({ voucher, voucherKey }) =>
-      (voucherKey === null || !invalidVouchers.has(voucherKey)) &&
-      (voucher === null || !ambiguousInvalidVoucherNumbers.has(voucher))
-    )
+    .filter(({ voucherKey }) => voucherKey === null || !invalidVouchers.has(voucherKey))
     .map(({ row }) => row);
 
   return { rows, skipped, errors };

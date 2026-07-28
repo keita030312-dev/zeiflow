@@ -156,7 +156,9 @@ const safetyLedger = [
   '"[明細行]","2026-07-04",13,"通信費","現金",300,"独立した正常伝票"',
   '"[明細行]","2026-07-05",20,"水道光熱費","現金",400,"日付不明行と同番号"',
   '"[明細行]","",20,"水道光熱費","現金",400,"所属日不明の不正行"',
+  '"[明細行]","2026-07-06",20,"水道光熱費","現金",425,"日付不明行の直後にある別日伝票"',
   '"[累計行]","","","","",1800,""',
+  '"[明細行]","2026-07-10",20,"水道光熱費","現金",450,"離れた別日の正常伝票"',
 ].join("\n");
 const safetyLines = safetyLedger.split("\n");
 const safetyHeader = findJournalHeader(safetyLines);
@@ -168,8 +170,23 @@ if (safetyHeader) {
   check("安全策: 空科目行はrowsへ入らない", safety.rows.every((row) => row.debitAccount && row.creditAccount));
   check("安全策: 同日同Noの不完全な複合伝票を部分保存しない", !safety.rows.some((row) => row.amount === 1000) && safety.errors.some((e) => e.includes("伝票10") && e.includes("2026-07-01")), JSON.stringify(safety));
   check("安全策: 別日同Noの正常伝票は残す", safety.rows.some((row) => row.amount === 2000), JSON.stringify(safety));
-  check("安全策: 日付欠落行は所属不明のため同Noを安全側で除外", !safety.rows.some((row) => row.amount === 400), JSON.stringify(safety));
+  check("安全策: 日付欠落行は直前の同一No伝票だけを除外", !safety.rows.some((row) => row.amount === 400), JSON.stringify(safety));
+  check("安全策: 日付欠落行の直後にある別日同Noは残す", safety.rows.some((row) => row.amount === 425), JSON.stringify(safety));
+  check("安全策: 離れた別日同Noの正常伝票は残す", safety.rows.some((row) => row.amount === 450), JSON.stringify(safety));
   check("安全策: 独立した正常伝票は残す", safety.rows.some((row) => row.amount === 300), JSON.stringify(safety));
+}
+
+// --- 3g. 伝票列のない通常CSVは、不正行だけをエラーにして正常行を保持 ---
+const plainImportLines = [
+  '"日付","借方科目","貸方科目","金額"',
+  '"2026-07-01","会議費","現金",500',
+  '"","消耗品費","現金",300',
+];
+const plainImportHeader = findJournalHeader(plainImportLines);
+if (plainImportHeader) {
+  const plainImport = parseImportRows(plainImportLines, plainImportHeader.header, plainImportHeader.headerLineIdx);
+  check("通常CSV: 伝票列なしでも正常行を保持", plainImport.rows.length === 1 && plainImport.rows[0]?.amount === 500, JSON.stringify(plainImport));
+  check("通常CSV: 伝票列なしの不正行はerror", plainImport.errors.length === 1 && plainImport.errors[0].includes("日付"), JSON.stringify(plainImport.errors));
 }
 
 // --- 4. Shift-JIS デコード ---
