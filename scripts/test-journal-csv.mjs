@@ -119,8 +119,7 @@ for (const invalidDate of [
 }
 
 // --- 3e. 取込行分類: 弥生の帳簿エクスポート(集計行・複合仕訳混在)を再現 ---
-// 実顧客ファイル(2026-07-28問い合わせ)の構造: 集計行[日計行][月計行]は日付が空、
-// 複合仕訳の相手側行は借方金額が空 → どちらもエラーでなく skipped になること
+// 明示された集計行だけを skipped とし、複合仕訳の不完全な行はエラーにする。
 const ledger = [
   '"【帳簿名】","仕訳日記帳"',
   '"【事業所名】","テスト株式会社"',
@@ -138,11 +137,56 @@ const ledgerHeader = findJournalHeader(ledgerLines);
 check("帳簿形式: ヘッダー検出(前置き3行スキップ)", ledgerHeader?.headerLineIdx === 3);
 if (ledgerHeader) {
   const { rows: impRows, skipped, errors: impErrors } = parseImportRows(ledgerLines, ledgerHeader.header, ledgerHeader.headerLineIdx);
-  check("帳簿形式: 明細2行を取込", impRows.length === 2, `got=${impRows.length}`);
+  check("帳簿形式: 完全な明細1行だけを取込", impRows.length === 1, `got=${impRows.length}`);
   check("帳簿形式: 和暦日付を解釈", impRows[0]?.date.toISOString().slice(0, 10) === "2024-08-01");
-  check("帳簿形式: 集計行2+金額なし行1=skipped3(エラーでない)", skipped === 3, `skipped=${skipped}`);
-  check("帳簿形式: 不正日付だけがエラー1件", impErrors.length === 1 && impErrors[0].includes("無効な日付"), JSON.stringify(impErrors));
+  check("帳簿形式: 明示的な集計行2件だけをskipped", skipped === 2, `skipped=${skipped}`);
+  check("帳簿形式: 不正日付と必須値欠落がエラー", impErrors.length === 3 && impErrors.some((e) => e.includes("無効な日付")) && impErrors.some((e) => e.includes("金額")), JSON.stringify(impErrors));
   check("帳簿形式: 摘要/科目/金額", impRows[0]?.description === "だんらん亭" && impRows[0]?.debitAccount === "交際費" && impRows[0]?.amount === 36930);
+  check("帳簿形式: 空科目行はrowsへ入らない", impRows.every((row) => row.debitAccount && row.creditAccount));
+}
+
+// --- 3f. 不完全な複合伝票を部分保存しない ---
+const safetyLedger = [
+  '"[仕訳行区分]","日付","伝票No.","借方科目","貸方科目","金額","摘要"',
+  '"[明細行]","2026-07-01",10,"旅費交通費","現金",1000,"複合の有効側"',
+  '"[明細行]","2026-07-01",10,"会議費","現金",,"複合の金額欠落側"',
+  '"[明細行]","2026-07-02",10,"通信費","現金",2000,"別日同番号の正常伝票"',
+  '"[明細行]","2026-07-02",11,,"現金",500,"借方欠落"',
+  '"[明細行]","2026-07-03",12,"消耗品費","現金",,"通常の金額欠落"',
+  '"[明細行]","2026-07-04",13,"通信費","現金",300,"独立した正常伝票"',
+  '"[明細行]","2026-07-05",20,"水道光熱費","現金",400,"日付不明行と同番号"',
+  '"[明細行]","",20,"水道光熱費","現金",400,"所属日不明の不正行"',
+  '"[明細行]","2026-07-06",20,"水道光熱費","現金",425,"日付不明行の直後にある別日伝票"',
+  '"[累計行]","","","","",1800,""',
+  '"[明細行]","2026-07-10",20,"水道光熱費","現金",450,"離れた別日の正常伝票"',
+].join("\n");
+const safetyLines = safetyLedger.split("\n");
+const safetyHeader = findJournalHeader(safetyLines);
+check("安全策: ヘッダーから行区分と伝票番号を検出", safetyHeader?.header.rowTypeIdx === 0 && safetyHeader?.header.voucherIdx === 2);
+if (safetyHeader) {
+  const safety = parseImportRows(safetyLines, safetyHeader.header, safetyHeader.headerLineIdx);
+  check("安全策: 明確な累計行だけskipped", safety.skipped === 1, `skipped=${safety.skipped}`);
+  check("安全策: 通常明細の金額欠落はエラー", safety.errors.some((e) => e.includes("行6") && e.includes("金額")), JSON.stringify(safety.errors));
+  check("安全策: 空科目行はrowsへ入らない", safety.rows.every((row) => row.debitAccount && row.creditAccount));
+  check("安全策: 同日同Noの不完全な複合伝票を部分保存しない", !safety.rows.some((row) => row.amount === 1000) && safety.errors.some((e) => e.includes("伝票10") && e.includes("2026-07-01")), JSON.stringify(safety));
+  check("安全策: 別日同Noの正常伝票は残す", safety.rows.some((row) => row.amount === 2000), JSON.stringify(safety));
+  check("安全策: 日付欠落行は直前の同一No伝票だけを除外", !safety.rows.some((row) => row.amount === 400), JSON.stringify(safety));
+  check("安全策: 日付欠落行の直後にある別日同Noは残す", safety.rows.some((row) => row.amount === 425), JSON.stringify(safety));
+  check("安全策: 離れた別日同Noの正常伝票は残す", safety.rows.some((row) => row.amount === 450), JSON.stringify(safety));
+  check("安全策: 独立した正常伝票は残す", safety.rows.some((row) => row.amount === 300), JSON.stringify(safety));
+}
+
+// --- 3g. 伝票列のない通常CSVは、不正行だけをエラーにして正常行を保持 ---
+const plainImportLines = [
+  '"日付","借方科目","貸方科目","金額"',
+  '"2026-07-01","会議費","現金",500',
+  '"","消耗品費","現金",300',
+];
+const plainImportHeader = findJournalHeader(plainImportLines);
+if (plainImportHeader) {
+  const plainImport = parseImportRows(plainImportLines, plainImportHeader.header, plainImportHeader.headerLineIdx);
+  check("通常CSV: 伝票列なしでも正常行を保持", plainImport.rows.length === 1 && plainImport.rows[0]?.amount === 500, JSON.stringify(plainImport));
+  check("通常CSV: 伝票列なしの不正行はerror", plainImport.errors.length === 1 && plainImport.errors[0].includes("日付"), JSON.stringify(plainImport.errors));
 }
 
 // --- 4. Shift-JIS デコード ---
