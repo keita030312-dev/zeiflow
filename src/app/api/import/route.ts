@@ -51,7 +51,11 @@ export async function POST(req: NextRequest) {
     }));
 
     if (entries.length === 0) {
-      return NextResponse.json({ error: "インポートできるデータがありません", skipped, errors }, { status: 400 });
+      // 集計行だけのCSV(明細なし)は「エラー」でなく内容の説明を返す(NIT: 赤トースト文言と青info表示の衝突回避)
+      const error = errors.length === 0 && skipped > 0
+        ? "仕訳の明細行が見つかりませんでした(合計行のみのCSVのようです)"
+        : "インポートできるデータがありません";
+      return NextResponse.json({ error, skipped, errors }, { status: 400 });
     }
 
     // 一括挿入
