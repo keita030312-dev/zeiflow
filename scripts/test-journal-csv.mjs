@@ -150,9 +150,12 @@ const safetyLedger = [
   '"[仕訳行区分]","日付","伝票No.","借方科目","貸方科目","金額","摘要"',
   '"[明細行]","2026-07-01",10,"旅費交通費","現金",1000,"複合の有効側"',
   '"[明細行]","2026-07-01",10,"会議費","現金",,"複合の金額欠落側"',
+  '"[明細行]","2026-07-02",10,"通信費","現金",2000,"別日同番号の正常伝票"',
   '"[明細行]","2026-07-02",11,,"現金",500,"借方欠落"',
   '"[明細行]","2026-07-03",12,"消耗品費","現金",,"通常の金額欠落"',
   '"[明細行]","2026-07-04",13,"通信費","現金",300,"独立した正常伝票"',
+  '"[明細行]","2026-07-05",20,"水道光熱費","現金",400,"日付不明行と同番号"',
+  '"[明細行]","",20,"水道光熱費","現金",400,"所属日不明の不正行"',
   '"[累計行]","","","","",1800,""',
 ].join("\n");
 const safetyLines = safetyLedger.split("\n");
@@ -161,9 +164,12 @@ check("安全策: ヘッダーから行区分と伝票番号を検出", safetyHe
 if (safetyHeader) {
   const safety = parseImportRows(safetyLines, safetyHeader.header, safetyHeader.headerLineIdx);
   check("安全策: 明確な累計行だけskipped", safety.skipped === 1, `skipped=${safety.skipped}`);
-  check("安全策: 通常明細の金額欠落はエラー", safety.errors.some((e) => e.includes("行5") && e.includes("金額")), JSON.stringify(safety.errors));
+  check("安全策: 通常明細の金額欠落はエラー", safety.errors.some((e) => e.includes("行6") && e.includes("金額")), JSON.stringify(safety.errors));
   check("安全策: 空科目行はrowsへ入らない", safety.rows.every((row) => row.debitAccount && row.creditAccount));
-  check("安全策: 不完全な複合伝票を部分保存しない", safety.rows.length === 1 && safety.rows[0]?.amount === 300 && safety.errors.some((e) => e.includes("伝票10")), JSON.stringify(safety));
+  check("安全策: 同日同Noの不完全な複合伝票を部分保存しない", !safety.rows.some((row) => row.amount === 1000) && safety.errors.some((e) => e.includes("伝票10") && e.includes("2026-07-01")), JSON.stringify(safety));
+  check("安全策: 別日同Noの正常伝票は残す", safety.rows.some((row) => row.amount === 2000), JSON.stringify(safety));
+  check("安全策: 日付欠落行は所属不明のため同Noを安全側で除外", !safety.rows.some((row) => row.amount === 400), JSON.stringify(safety));
+  check("安全策: 独立した正常伝票は残す", safety.rows.some((row) => row.amount === 300), JSON.stringify(safety));
 }
 
 // --- 4. Shift-JIS デコード ---
