@@ -1,7 +1,7 @@
 // ZeiFlow 学習集計・CSVパースの動作確認(Node 24 strip-types で TS を直接読む)
 // 実行: node --experimental-strip-types scripts/test-journal-csv.mjs
 import { buildLearningText } from "../src/lib/ai/learning-context.ts";
-import { parseJournalCsv, decodeCsvBuffer, parseCsvLine, parseFlexibleDate } from "../src/lib/csv/journal-csv.ts";
+import { parseJournalCsv, decodeCsvBuffer, parseCsvLine, parseFlexibleDate, findJournalHeader, parseImportRows } from "../src/lib/csv/journal-csv.ts";
 import iconv from "iconv-lite";
 
 let failed = 0;
@@ -116,6 +116,33 @@ for (const invalidDate of [
   "昭和64年1月8日",
 ]) {
   check(`不正な日付 ${invalidDate} は null`, parseFlexibleDate(invalidDate) === null);
+}
+
+// --- 3e. 取込行分類: 弥生の帳簿エクスポート(集計行・複合仕訳混在)を再現 ---
+// 実顧客ファイル(2026-07-28問い合わせ)の構造: 集計行[日計行][月計行]は日付が空、
+// 複合仕訳の相手側行は借方金額が空 → どちらもエラーでなく skipped になること
+const ledger = [
+  '"【帳簿名】","仕訳日記帳"',
+  '"【事業所名】","テスト株式会社"',
+  '"【集計期間】","令和06年08月01日","令和07年07月31日"',
+  '"[仕訳行区分]","日付","伝票No.","決算","調整","付箋1","付箋2","タイプ","生成元","借方勘定科目","借方補助科目","借方部門","借方税区分","借方税計算区分","借方金額","借方税額","貸方勘定科目","貸方補助科目","貸方部門","貸方税区分","貸方税計算区分","貸方金額","貸方税額","摘要","課税区分","仕入税額控除","期日","時間","伝票","作業日付","仕訳番号"',
+  '"[明細行]","令和06年08月01日",265,"","NO","","","","","交際費","飲食費","","課対仕入10%","",36930,,"現金","","","対象外","",36930,,"だんらん亭","区分記載","80%控除","",,"","令和07年06月17日",19091',
+  '"[明細行]","令和06年08月01日",400,"","NO","","","[振替]","","支払手数料","","","課対仕入10%","",3740,,"","","","対象外","",,,"管理料","適格","100%","",,"","令和07年06月19日",19269',
+  '"[明細行]","令和06年08月01日",400,"","NO","","","[振替]","","","","","対象外","",,,"売上","長谷川様","","課税売上10%","",40700,,"管理費","","","",,"","令和07年06月19日",19271',
+  '"[日計行]","","","","","","","","","","","","","",123010,0,"","","","","",123010,0,"","","","","","","",""',
+  '"[明細行]","令和06年13月01日",500,"","NO","","","","","会議費","","","課対仕入10%","",1000,,"現金","","","対象外","",1000,,"不正日付行","適格","100%","",,"","令和07年06月19日",19999',
+  '"[月計行]","","","","","","","","","","","","","",1811789,0,"","","","","",1811789,0,"","","","","","","",""',
+].join("\r\n");
+const ledgerLines = decodeCsvBuffer(iconv.encode(ledger, "shift_jis")).split("\n").map((l) => l.trim()).filter((l) => l.length > 0);
+const ledgerHeader = findJournalHeader(ledgerLines);
+check("帳簿形式: ヘッダー検出(前置き3行スキップ)", ledgerHeader?.headerLineIdx === 3);
+if (ledgerHeader) {
+  const { rows: impRows, skipped, errors: impErrors } = parseImportRows(ledgerLines, ledgerHeader.header, ledgerHeader.headerLineIdx);
+  check("帳簿形式: 明細2行を取込", impRows.length === 2, `got=${impRows.length}`);
+  check("帳簿形式: 和暦日付を解釈", impRows[0]?.date.toISOString().slice(0, 10) === "2024-08-01");
+  check("帳簿形式: 集計行2+金額なし行1=skipped3(エラーでない)", skipped === 3, `skipped=${skipped}`);
+  check("帳簿形式: 不正日付だけがエラー1件", impErrors.length === 1 && impErrors[0].includes("無効な日付"), JSON.stringify(impErrors));
+  check("帳簿形式: 摘要/科目/金額", impRows[0]?.description === "だんらん亭" && impRows[0]?.debitAccount === "交際費" && impRows[0]?.amount === 36930);
 }
 
 // --- 4. Shift-JIS デコード ---
