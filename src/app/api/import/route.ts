@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireAuth, getScope } from "@/lib/auth-middleware";
 import { reportError } from "@/lib/error-reporter";
-import { parseCsvLine, decodeCsvBuffer, findJournalHeader, parseFlexibleDate } from "@/lib/csv/journal-csv";
+import { decodeCsvBuffer, findJournalHeader, parseImportRows } from "@/lib/csv/journal-csv";
 
 export async function POST(req: NextRequest) {
   const auth = await requireAuth(req);
@@ -38,43 +38,24 @@ export async function POST(req: NextRequest) {
         error: "CSVのヘッダーに必須項目がありません。「日付,借方科目,貸方科目,金額」を含めてください",
       }, { status: 400 });
     }
-    const { dateIdx, debitIdx, creditIdx, amountIdx, descIdx, taxIdx, invoiceIdx, memoIdx } = found.header;
-    const headerLineIdx = found.headerLineIdx;
+    // 和暦(令和8年/R8.7.21)・「2026年7月21日」形式も許容。
+    // 集計行([日計行][月計行]等)や金額のない行はエラーでなく「対象外」として読み飛ばす
+    const { rows, skipped, errors } = parseImportRows(lines, found.header, found.headerLineIdx);
 
-    const entries = [];
-    const errors = [];
-
-    for (let i = headerLineIdx + 1; i < lines.length; i++) {
-      const cols = parseCsvLine(lines[i]);
-      try {
-        // 和暦(令和8年/R8.7.21)・「2026年7月21日」形式も許容
-        const date = parseFlexibleDate(cols[dateIdx]);
-        if (!date) throw new Error("無効な日付");
-
-        const amount = parseInt(cols[amountIdx].replace(/[,¥\\]/g, ""), 10);
-        if (isNaN(amount) || amount <= 0) throw new Error("無効な金額");
-
-        entries.push({
-          date,
-          debitAccount: cols[debitIdx],
-          creditAccount: cols[creditIdx],
-          amount,
-          taxAmount: taxIdx >= 0 ? parseInt(cols[taxIdx]?.replace(/[,¥\\]/g, "") || "0", 10) || null : null,
-          description: descIdx >= 0 ? cols[descIdx] || `インポート行${i}` : `インポート行${i}`,
-          invoiceNumber: invoiceIdx >= 0 ? cols[invoiceIdx] || null : null,
-          memo: memoIdx >= 0 ? cols[memoIdx] || null : null,
-          clientId,
-          userId: auth.id,
-          ...(auth.orgId ? { organizationId: auth.orgId } : {}),
-          source: "IMPORT", // 取込データ=学習対象(OCR未確認出力と区別する)
-        });
-      } catch (e) {
-        errors.push(`行${i + 1}: ${e instanceof Error ? e.message : "不明なエラー"}`);
-      }
-    }
+    const entries = rows.map((row) => ({
+      ...row,
+      clientId,
+      userId: auth.id,
+      ...(auth.orgId ? { organizationId: auth.orgId } : {}),
+      source: "IMPORT", // 取込データ=学習対象(OCR未確認出力と区別する)
+    }));
 
     if (entries.length === 0) {
-      return NextResponse.json({ error: "インポートできるデータがありません", errors }, { status: 400 });
+      // 集計行だけのCSV(明細なし)は「エラー」でなく内容の説明を返す(NIT: 赤トースト文言と青info表示の衝突回避)
+      const error = errors.length === 0 && skipped > 0
+        ? "仕訳の明細行が見つかりませんでした(合計行のみのCSVのようです)"
+        : "インポートできるデータがありません";
+      return NextResponse.json({ error, skipped, errors }, { status: 400 });
     }
 
     // 一括挿入
@@ -93,6 +74,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       success: true,
       imported: result.count,
+      skipped: skipped > 0 ? skipped : undefined,
       errors: errors.length > 0 ? errors : undefined,
     });
   } catch (error) {

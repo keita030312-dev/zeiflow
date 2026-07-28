@@ -139,6 +139,79 @@ export function parseJournalCsv(text: string): PastJournalRow[] | null {
   return rows;
 }
 
+/** 取込CSVの1仕訳行(取込画面用。DB保存に必要な付帯情報は呼び出し側で付与する) */
+export interface ImportRow {
+  date: Date;
+  debitAccount: string;
+  creditAccount: string;
+  amount: number;
+  taxAmount: number | null;
+  description: string;
+  invoiceNumber: string | null;
+  memo: string | null;
+}
+
+export interface ImportParseResult {
+  rows: ImportRow[];
+  /** 取込対象外として読み飛ばした行数(集計行・金額のない行) */
+  skipped: number;
+  /** 仕訳明細のはずなのに解釈できなかった行 */
+  errors: string[];
+}
+
+/**
+ * 取込CSVのデータ行を仕訳行に変換する。
+ * 弥生の帳簿エクスポートには仕訳でない集計行([日計行][月計行][累計行]=日付が空)や、
+ * 複合仕訳の相手側行(金額欄が空)が混ざる。これらは入力ミスではなく取込対象外なので、
+ * エラーではなく skipped に数える(赤エラー表示にすると顧客が取込失敗と誤解する)。
+ */
+export function parseImportRows(
+  lines: string[],
+  header: JournalCsvHeader,
+  headerLineIdx: number,
+): ImportParseResult {
+  const rows: ImportRow[] = [];
+  const errors: string[] = [];
+  let skipped = 0;
+
+  for (let i = headerLineIdx + 1; i < lines.length; i++) {
+    const cols = parseCsvLine(lines[i]);
+    const rawDate = (cols[header.dateIdx] || "").trim();
+    const rawAmount = (cols[header.amountIdx] || "").replace(/[,¥\\]/g, "").trim();
+    if (!rawDate || !rawAmount) {
+      skipped++;
+      continue;
+    }
+
+    const date = parseFlexibleDate(rawDate);
+    if (!date) {
+      errors.push(`行${i + 1}: 無効な日付`);
+      continue;
+    }
+    const amount = parseInt(rawAmount, 10);
+    if (isNaN(amount) || amount <= 0) {
+      errors.push(`行${i + 1}: 無効な金額`);
+      continue;
+    }
+
+    rows.push({
+      date,
+      debitAccount: cols[header.debitIdx],
+      creditAccount: cols[header.creditIdx],
+      amount,
+      taxAmount:
+        header.taxIdx >= 0
+          ? parseInt(cols[header.taxIdx]?.replace(/[,¥\\]/g, "") || "0", 10) || null
+          : null,
+      description: header.descIdx >= 0 ? cols[header.descIdx] || `インポート行${i}` : `インポート行${i}`,
+      invoiceNumber: header.invoiceIdx >= 0 ? cols[header.invoiceIdx] || null : null,
+      memo: header.memoIdx >= 0 ? cols[header.memoIdx] || null : null,
+    });
+  }
+
+  return { rows, skipped, errors };
+}
+
 const ERA_DEFINITIONS: Record<string, { base: number; start: string; end?: string }> = {
   令和: { base: 2018, start: "2019-05-01" },
   R: { base: 2018, start: "2019-05-01" },

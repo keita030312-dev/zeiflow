@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { Upload, FileText, CheckCircle, AlertCircle, Trash2, Plus, Loader2 } from "lucide-react";
+import { Upload, FileText, CheckCircle, AlertCircle, Info, Trash2, Plus, Loader2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Select,
@@ -42,7 +42,7 @@ export default function ImportPage() {
   const [clients, setClients] = useState<Client[]>([]);
   const [selectedClient, setSelectedClient] = useState("");
   const [uploading, setUploading] = useState(false);
-  const [result, setResult] = useState<{ imported: number; errors?: string[] } | null>(null);
+  const [result, setResult] = useState<{ imported: number; skipped?: number; errors?: string[] } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   // --- Statement tab state ---
@@ -76,13 +76,13 @@ export default function ImportPage() {
       formData.append("file", file);
       formData.append("clientId", selectedClient);
       const res = await fetch("/api/import", { method: "POST", body: formData });
-      const data = await readJsonOrThrow<{ imported: number; errors?: string[] }>(res, "インポートに失敗しました");
-      setResult({ imported: data.imported, errors: data.errors });
+      const data = await readJsonOrThrow<{ imported: number; skipped?: number; errors?: string[] }>(res, "インポートに失敗しました");
+      setResult({ imported: data.imported, skipped: data.skipped, errors: data.errors });
       toast.success(`${data.imported}件の仕訳をインポートしました`);
     } catch (e) {
       toast.error(toUserMessage(e, "インポートに失敗しました"));
-      const body = e instanceof ApiError ? (e.body as { errors?: string[] } | null) : null;
-      if (body?.errors) setResult({ imported: 0, errors: body.errors });
+      const body = e instanceof ApiError ? (e.body as { skipped?: number; errors?: string[] } | null) : null;
+      if (body?.errors || body?.skipped) setResult({ imported: 0, skipped: body.skipped, errors: body.errors });
     } finally {
       setUploading(false);
       if (fileRef.current) fileRef.current.value = "";
@@ -311,6 +311,14 @@ export default function ImportPage() {
                     <div className="flex items-center gap-2 p-3 rounded-lg bg-green-500/10 border border-green-500/20">
                       <CheckCircle className="h-4 w-4 text-green-400" />
                       <span className="text-sm text-green-400">{result.imported}件をインポートしました</span>
+                    </div>
+                  )}
+                  {result.skipped != null && result.skipped > 0 && (
+                    <div className="flex items-center gap-2 p-3 rounded-lg bg-blue-500/10 border border-blue-500/20">
+                      <Info className="h-4 w-4 text-blue-400 shrink-0" />
+                      <span className="text-sm text-blue-300">
+                        対象外 {result.skipped}件を読み飛ばしました(日計・月計などの合計行や金額のない行。エラーではありません)
+                      </span>
                     </div>
                   )}
                   {result.errors && result.errors.length > 0 && (
